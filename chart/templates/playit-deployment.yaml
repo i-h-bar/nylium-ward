@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: playit
+  labels:
+    {{- include "playit.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "playit.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "playit.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: playit
+          image: "{{ .Values.playit.image.repository }}:{{ .Values.playit.image.tag }}"
+          imagePullPolicy: {{ .Values.playit.image.pullPolicy }}
+          # The agent dials out; the tunnel destination is set in the
+          # playit.gg dashboard to the Service clusterIP on port 25565.
+          env:
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: PLAYIT_SECRET_KEY

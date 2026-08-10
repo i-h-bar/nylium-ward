@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: minecraft
+  labels:
+    {{- include "mc.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  # Pinned so the playit.gg tunnel destination is configured once and never
+  # changes. Must sit inside the cluster service CIDR (k3s default 10.43.0.0/16);
+  # a mismatch fails loudly at install time.
+  clusterIP: {{ .Values.service.clusterIP }}
+  selector:
+    {{- include "mc.selectorLabels" . | nindent 4 }}
+  ports:
+    # RCON (25575) is deliberately absent — it stays reachable only via kubectl exec.
+    - name: minecraft
+      port: {{ .Values.service.port }}
+      targetPort: 25565
+      protocol: TCP
