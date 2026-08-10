@@ -1,0 +1,54 @@
+# Minecraft server image. Pinned — never use `latest`.
+image:
+  repository: itzg/minecraft-server
+  tag: "2026.8.0"
+  pullPolicy: IfNotPresent
+
+# CurseForge modpack. Both values are REQUIRED; there are no defaults.
+# Find the slug in the modpack URL: curseforge.com/minecraft/modpacks/<slug>
+# Pin fileId so a pod restart can never silently upgrade the pack.
+modpack:
+  slug: ""
+  fileId: ""
+
+server:
+  memory: 6G            # JVM heap. Keep resources.limits.memory ~2Gi above this.
+  aikarFlags: true
+  motd: "Modded Minecraft"
+  difficulty: normal
+  maxPlayers: 10
+  viewDistance: 10
+  ops: []               # Minecraft usernames, e.g. [Notch, jeb_]
+  tz: America/Denver
+  extraEnv: {}          # Any additional itzg env var, e.g. {SPAWN_PROTECTION: "0"}
+
+# No CPU limit on purpose: CFS throttling on a JVM causes GC pauses players feel.
+resources:
+  requests:
+    cpu: "2"
+    memory: 8Gi
+  limits:
+    memory: 8Gi
+
+persistence:
+  size: 20Gi
+  storageClass: local-path
+
+# clusterIP is pinned so the playit.gg dashboard destination never changes.
+# Must fall inside the cluster's service CIDR (k3s default: 10.43.0.0/16).
+service:
+  clusterIP: 10.43.255.65
+  port: 25565
+
+# First boot downloads the modpack and generates a world. Raise if that times out.
+probes:
+  startupMinutes: 15
+
+playit:
+  image:
+    repository: ghcr.io/playit-cloud/playit-agent
+    tag: "1.0.10"
+    pullPolicy: IfNotPresent
+
+# Created by `task secrets` from .env — NOT managed by this chart.
+secretName: minecraft-secrets

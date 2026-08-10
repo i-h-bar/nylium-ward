@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minecraft
+  labels:
+    {{- include "mc.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  # The /data PVC is ReadWriteOnce. A rolling update would start a second pod
+  # against the same world directory before the first is gone.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "mc.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mc.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Rolls the pod when server config changes, so `helm upgrade` alone
+        # is enough to apply a new pinned modpack file id.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      # The image traps SIGTERM and sends `stop` via RCON, waiting up to
+      # STOP_DURATION (60s). The 30s default would SIGKILL mid-save.
+      terminationGracePeriodSeconds: 120
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: minecraft
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: minecraft
+              containerPort: 25565
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: minecraft-config
+          # Referenced individually, not via envFrom: an envFrom on the secret
+          # would inject PLAYIT_SECRET_KEY into this container.
+          env:
+            - name: CF_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: CF_API_KEY
+                  optional: true
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          # First boot downloads the whole modpack and generates a world.
+          # Without this, liveness kills the pod mid-install every time.
+          startupProbe:
+            exec:
+              command: ["mc-health"]
+            periodSeconds: 15
+            failureThreshold: {{ mul .Values.probes.startupMinutes 4 }}
+          livenessProbe:
+            exec:
+              command: ["mc-health"]
+            periodSeconds: 30
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command: ["mc-health"]
+            periodSeconds: 10
+            failureThreshold: 3
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: minecraft-data
