@@ -8,8 +8,8 @@ image:
 # Find the slug in the modpack URL: curseforge.com/minecraft/modpacks/<slug>
 # Pin fileId so a pod restart can never silently upgrade the pack.
 modpack:
-  slug: ""
-  fileId: ""
+  slug: "all-the-mods-10"
+  fileId: "8558519"
 
 server:
   memory: 6G            # JVM heap. Keep resources.limits.memory ~2Gi above this.
@@ -19,8 +19,14 @@ server:
   maxPlayers: 10
   viewDistance: 10
   ops: []               # Minecraft usernames, e.g. [Notch, jeb_]
-  tz: America/Denver
+  tz: UTC
   extraEnv: {}          # Any additional itzg env var, e.g. {SPAWN_PROTECTION: "0"}
+
+# Optional server resource pack, pushed to every client on join.
+resourcePack:
+  url: ""          # direct .zip URL; leave empty to disable
+  sha1: ""         # optional checksum, recommended if url is set
+  enforce: false   # kick clients who decline the pack
 
 # No CPU limit on purpose: CFS throttling on a JVM causes GC pauses players feel.
 resources:

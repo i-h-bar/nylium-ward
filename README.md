@@ -28,12 +28,26 @@ take several minutes.
 
 ### 1. Choose the modpack
 
-Edit `chart/values.yaml`:
+Find the pack on CurseForge and take two values from its URLs. Using
+[All the Mods 10](https://www.curseforge.com/minecraft/modpacks/all-the-mods-10)
+as an example:
+
+1. **`slug`** — the path segment right after `/minecraft/modpacks/` in the
+   pack's main page URL:
+   `curseforge.com/minecraft/modpacks/`**`all-the-mods-10`**
+
+2. **`fileId`** — open the pack's **Files** tab
+   (`.../all-the-mods-10/files/all`), which lists every release. That list
+   does **not** show the ID — click into the specific version you want. Its
+   page URL ends in the numeric ID:
+   `curseforge.com/minecraft/modpacks/all-the-mods-10/files/`**`8558519`**
+
+Then edit `chart/values.yaml`:
 
 ```yaml
 modpack:
-  slug: all-the-mods-10     # from curseforge.com/minecraft/modpacks/<slug>
-  fileId: "1234567"         # a specific file id from the pack's Files tab
+  slug: all-the-mods-10
+  fileId: "8558519"
 ```
 
 Both are required — the chart refuses to render without them. `fileId` is
@@ -44,7 +58,21 @@ not a "Server Files" download.
 Most packs need more than the default memory. Adjust `server.memory` and keep
 `resources.limits.memory` roughly 2Gi above it.
 
-### 2. Create `.env`
+### 2. (Optional) Add a resource pack
+
+A resource pack is a texture/UI pack the server pushes to every client on
+join. To enable one, edit `chart/values.yaml`:
+
+```yaml
+resourcePack:
+  url: https://example.com/my-pack.zip   # must be a direct .zip link
+  sha1: ""                                # optional but recommended checksum
+  enforce: false                          # true kicks clients who decline it
+```
+
+Leave `url` empty to disable it entirely — the default.
+
+### 3. Create `.env`
 
 ```bash
 cp .env.example .env
@@ -53,7 +81,7 @@ cp .env.example .env
 Fill in `PLAYIT_SECRET_KEY` from the playit.gg dashboard. `CF_API_KEY` is
 optional — the image bundles a working key.
 
-### 3. Deploy
+### 4. Deploy
 
 ```bash
 task up
@@ -62,7 +90,7 @@ task up
 First boot downloads the entire modpack and generates a world, so it can take
 10+ minutes. Watch it with `task logs`.
 
-### 4. Point the tunnel at the server
+### 5. Point the tunnel at the server
 
 In the playit.gg dashboard, set the tunnel's local destination to the pinned
 Service address:

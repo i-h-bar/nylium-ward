@@ -19,6 +19,13 @@ data:
   OPS: {{ join "," .Values.server.ops | quote }}
   ENABLE_RCON: "true"
   STOP_DURATION: "60"
+  {{- if .Values.resourcePack.url }}
+  RESOURCE_PACK: {{ .Values.resourcePack.url | quote }}
+  {{- if .Values.resourcePack.sha1 }}
+  RESOURCE_PACK_SHA1: {{ .Values.resourcePack.sha1 | quote }}
+  {{- end }}
+  RESOURCE_PACK_ENFORCE: {{ .Values.resourcePack.enforce | quote }}
+  {{- end }}
   {{- range $key, $value := .Values.server.extraEnv }}
   {{ $key }}: {{ $value | quote }}
   {{- end }}
