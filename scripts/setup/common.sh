@@ -13,3 +13,21 @@ require_sudo() {
     exit 1
   fi
 }
+
+is_wsl() {
+  [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null
+}
+
+check_wsl_systemd() {
+  if is_wsl && [ ! -d /run/systemd/system ]; then
+    log_warn "Running under WSL without systemd enabled — k3s needs systemd to manage its service."
+    log_warn "Add this to /etc/wsl.conf, then run 'wsl --shutdown' from Windows and reopen this distro:"
+    log_warn "  [boot]"
+    log_warn "  systemd=true"
+    read -r -p "Continue anyway? [y/N] " wsl_confirm
+    case "$wsl_confirm" in
+      [yY]|[yY][eE][sS]) ;;
+      *) log_info "Aborted."; exit 0 ;;
+    esac
+  fi
+}

@@ -3,7 +3,7 @@
 #
 # Usage:
 #   ./scripts/setup.sh              # auto-detect the target from /etc/os-release
-#   ./scripts/setup.sh debian       # force a specific target
+#   ./scripts/setup.sh debian       # force a specific target (debian, arch)
 #
 # To add support for another OS, drop a scripts/setup/<target>.sh defining
 # install_prereqs, install_k3s, install_helm, and install_task, then extend
@@ -21,6 +21,7 @@ detect_target() {
     . /etc/os-release
     case " ${ID:-} ${ID_LIKE:-} " in
       *" debian "*|*" ubuntu "*) echo "debian" ;;
+      *" arch "*|*" cachyos "*) echo "arch" ;;
       *) echo "unsupported" ;;
     esac
   else
@@ -38,6 +39,7 @@ if [ ! -f "$TARGET_SCRIPT" ]; then
 fi
 
 require_sudo
+check_wsl_systemd
 
 log_info "Setting up for target: $TARGET"
 log_info "This will install: k3s (Kubernetes, incl. kubectl), Helm, and Task."

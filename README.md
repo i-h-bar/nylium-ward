@@ -25,8 +25,21 @@ take several minutes.
 - A [playit.gg](https://playit.gg) account with a TCP tunnel
 
 Run `./scripts/setup.sh` to install k3s, Helm, and Task in one shot. It
-auto-detects the OS (Debian/Ubuntu today; see `scripts/setup/` to add more)
-or takes a target explicitly: `./scripts/setup.sh debian`.
+auto-detects the OS (Debian/Ubuntu and Arch/CachyOS today; see
+`scripts/setup/` to add more) or takes a target explicitly:
+`./scripts/setup.sh debian`.
+
+On Windows, run it inside WSL2 (Ubuntu) rather than natively — k3s needs a
+Linux kernel. WSL doesn't enable systemd by default, which k3s requires; if
+it's off, add to `/etc/wsl.conf`:
+
+```ini
+[boot]
+systemd=true
+```
+
+then run `wsl --shutdown` from Windows and reopen the distro before running
+the script.
 
 ## Setup
 
