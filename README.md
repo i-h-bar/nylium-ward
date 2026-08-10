@@ -24,6 +24,10 @@ take several minutes.
 - `helm`, `kubectl`, and `task` on the machine you operate from
 - A [playit.gg](https://playit.gg) account with a TCP tunnel
 
+Run `./scripts/setup.sh` to install k3s, Helm, and Task in one shot. It
+auto-detects the OS (Debian/Ubuntu today; see `scripts/setup/` to add more)
+or takes a target explicitly: `./scripts/setup.sh debian`.
+
 ## Setup
 
 ### 1. Choose the modpack
