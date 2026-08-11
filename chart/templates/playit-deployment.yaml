@@ -13,6 +13,10 @@ spec:
     metadata:
       labels:
         {{- include "playit.selectorLabels" . | nindent 8 }}
+      {{- if .Values.networkPolicy.auditMode }}
+      annotations:
+        policy.cilium.io/audit-mode: "true"
+      {{- end }}
     spec:
       containers:
         - name: playit

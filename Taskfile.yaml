@@ -58,10 +58,12 @@ tasks:
           --from-env-file=.env --dry-run=client -o yaml | kubectl apply -f -
 
   up:
-    desc: Install or upgrade the release (waits for the server to be ready)
+    desc: Install or upgrade the release (waits for the server to be ready, then narrows network policy)
     deps: [secrets]
     cmds:
-      - helm upgrade --install {{.RELEASE}} {{.CHART}} --wait --timeout 20m
+      - helm upgrade --install {{.RELEASE}} {{.CHART}}
+          --set networkPolicy.phase=install --wait --timeout 20m
+      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set networkPolicy.phase=steady
 
   down:
     desc: Uninstall the release (the world PVC is retained)
@@ -87,10 +89,12 @@ tasks:
       - kubectl exec -it {{.DEPLOY}} -- rcon-cli
 
   restart:
-    desc: Restart the server pod
+    desc: Restart the server pod (broad network policy while it comes back, narrowed once Ready)
     cmds:
+      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set networkPolicy.phase=install
       - kubectl rollout restart {{.DEPLOY}}
       - kubectl rollout status {{.DEPLOY}} --timeout=20m
+      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set networkPolicy.phase=steady
 
   export:
     desc: Consistent world snapshot to ./exports (safe on a running server)
@@ -169,8 +173,10 @@ tasks:
     desc: 'Apply a new pinned modpack fileId. Edit chart/values.yaml first, then run this.'
     cmds:
       - task: export
-      - helm upgrade --install {{.RELEASE}} {{.CHART}} --wait --timeout 30m
+      - helm upgrade --install {{.RELEASE}} {{.CHART}}
+          --set networkPolicy.phase=install --wait --timeout 30m
       - kubectl rollout status {{.DEPLOY}} --timeout=30m
+      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set networkPolicy.phase=steady
       - |
         echo "Upgrade complete. If the world is broken, roll back with:"
         echo "  task restore FILE=$(ls -t {{.EXPORTS}}/world-*.tar.gz | head -1)"

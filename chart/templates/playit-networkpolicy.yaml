@@ -1,0 +1,33 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: playit
+  labels:
+    {{- include "playit.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "playit.selectorLabels" . | nindent 6 }}
+  # Empty ingress list = default-deny ingress, no exceptions. Nothing calls
+  # into this pod — it dials out to playit.gg and forwards to the minecraft
+  # Service; the minecraft pod's own ingress rule is what actually admits
+  # players (via CiliumNetworkPolicy/minecraft).
+  ingress: []
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    # Broad, not FQDN-scoped: playit's relay endpoints aren't documented or
+    # stable enough to enumerate confidently. See the design doc's Decisions
+    # table. "world" still excludes intra-cluster pod-to-pod traffic, so this
+    # pod still can't reach anything else in the cluster.
+    - toEntities:
+        - world

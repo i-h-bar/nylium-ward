@@ -56,5 +56,24 @@ playit:
     tag: "1.0.10"
     pullPolicy: IfNotPresent
 
+# Cilium network policy. The chart is installed against a cluster that already
+# has Cilium as its CNI (see scripts/setup.sh / cilium/values.yaml) — these
+# values only control what CiliumNetworkPolicy allows, not whether Cilium runs.
+networkPolicy:
+  # install: broad egress needed to fetch a modpack (CurseForge/Forge/Fabric/
+  #          Mojang piston-meta). steady: narrow egress for a running server
+  #          (Mojang session-auth only). `task up`/`upgrade`/`restart` apply
+  #          install, wait for Ready, then apply steady automatically — this
+  #          value is just the last-applied state, not something to hand-edit
+  #          in normal use.
+  phase: install
+  # true = Cilium logs what would be dropped via Hubble but enforces nothing.
+  # Use while discovering a phase's FQDN allowlist. See the rollout procedure
+  # in docs/superpowers/specs/2026-08-11-cilium-network-security-design.md.
+  auditMode: false
+  # Modpack-specific egress additions (mods that phone home to their own
+  # servers), applied in both phases. e.g. ["updates.somemod.dev"]
+  extraAllowedFQDNs: []
+
 # Created by `task secrets` from .env — NOT managed by this chart.
 secretName: minecraft-secrets

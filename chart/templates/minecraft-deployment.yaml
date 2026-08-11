@@ -21,6 +21,11 @@ spec:
         # Rolls the pod when server config changes, so `helm upgrade` alone
         # is enough to apply a new pinned modpack file id.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if .Values.networkPolicy.auditMode }}
+        # Cilium logs what would be dropped via Hubble but enforces nothing.
+        # See the rollout procedure in the Cilium network security design doc.
+        policy.cilium.io/audit-mode: "true"
+        {{- end }}
     spec:
       # The image traps SIGTERM and sends `stop` via RCON, waiting up to
       # STOP_DURATION (60s). The 30s default would SIGKILL mid-save.

@@ -20,7 +20,8 @@ take several minutes.
 
 ## Prerequisites
 
-- A Kubernetes cluster (k3s) with the `local-path` storage class
+- A Kubernetes cluster (k3s) with the `local-path` storage class and
+  [Cilium](https://cilium.io) as its CNI — `./scripts/setup.sh` sets both up
 - `helm`, `kubectl`, and `task` on the machine you operate from
 - A [playit.gg](https://playit.gg) account with a TCP tunnel
 
@@ -119,6 +120,30 @@ Service address:
 That value comes from `service.clusterIP` in `chart/values.yaml`. It is pinned
 so you only ever set it once.
 
+## Network security
+
+Cilium enforces `CiliumNetworkPolicy` rules on both pods:
+
+- **minecraft**: only reachable from the `playit` pod on 25565. Outbound
+  traffic is default-deny except an FQDN allowlist — broad while a modpack is
+  being fetched (CurseForge, Forge/Fabric, Mojang piston-meta), narrowed to
+  just Mojang session-auth once the server is running. `task up`,
+  `task upgrade`, and `task restart` all switch between these automatically;
+  you don't need to think about it in normal use.
+- **playit**: nothing can reach it at all (it only dials out). Outbound is
+  broad — its relay endpoints aren't a stable, documented list to allowlist
+  by domain.
+
+If a modpack needs a domain outside the built-in list, add it to
+`networkPolicy.extraAllowedFQDNs` in `chart/values.yaml`. To find out what's
+being blocked, set `networkPolicy.auditMode: true` (logs drops via Hubble
+without enforcing) and watch with `task hubble`.
+
+**WSL2 note:** Cilium's eBPF datapath is not an officially supported
+environment under WSL2's kernel. It's expected to work but hasn't been
+exhaustively verified across WSL2 kernel versions — if `task cilium:status`
+never goes ready, that's the first thing to suspect.
+
 ## Operations
 
 | Command | What it does |
@@ -133,6 +158,9 @@ so you only ever set it once.
 | `task export` | Snapshot the world to `exports/` |
 | `task restore FILE=…` | Replace the world from a snapshot |
 | `task upgrade` | Apply a new pinned `fileId` (snapshots first) |
+| `task cilium:up` | Install or upgrade Cilium itself |
+| `task cilium:status` | Cilium DaemonSet/operator rollout status |
+| `task hubble` | Stream live network flows (Ctrl-C to stop) |
 
 ## Upgrading the modpack
 
