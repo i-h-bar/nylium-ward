@@ -67,10 +67,6 @@ networkPolicy:
   #          value is just the last-applied state, not something to hand-edit
   #          in normal use.
   phase: install
-  # true = Cilium logs what would be dropped via Hubble but enforces nothing.
-  # Use while discovering a phase's FQDN allowlist. See the rollout procedure
-  # in docs/superpowers/specs/2026-08-11-cilium-network-security-design.md.
-  auditMode: true
   # Modpack-specific egress additions (mods that phone home to their own
   # servers), applied in both phases. e.g. ["updates.somemod.dev"]
   extraAllowedFQDNs: []

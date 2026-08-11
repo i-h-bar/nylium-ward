@@ -136,8 +136,9 @@ Cilium enforces `CiliumNetworkPolicy` rules on both pods:
 
 If a modpack needs a domain outside the built-in list, add it to
 `networkPolicy.extraAllowedFQDNs` in `chart/values.yaml`. To find out what's
-being blocked, set `networkPolicy.auditMode: true` (logs drops via Hubble
-without enforcing) and watch with `task hubble`.
+being blocked, run `task cilium:audit-on` (logs drops via Hubble without
+enforcing, cluster-wide) and watch with `task hubble`; run
+`task cilium:audit-off` when done.
 
 **WSL2 note:** Cilium's eBPF datapath is not an officially supported
 environment under WSL2's kernel. It's expected to work but hasn't been

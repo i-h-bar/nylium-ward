@@ -36,6 +36,28 @@ tasks:
       - kubectl -n {{.CILIUM_NAMESPACE}} rollout status deployment/cilium-operator --timeout=5m
       - kubectl -n {{.CILIUM_NAMESPACE}} get pods -l k8s-app=cilium
 
+  cilium:audit-on:
+    desc: Enable Cilium policy audit mode cluster-wide (logs drops via Hubble, enforces nothing)
+    cmds:
+      - helm upgrade {{.CILIUM_RELEASE}} cilium/cilium
+          --namespace {{.CILIUM_NAMESPACE}}
+          --version {{.CILIUM_VERSION}}
+          -f {{.CILIUM_VALUES}}
+          --set policyAuditMode=true
+          --wait --timeout 10m
+      - task: cilium:status
+
+  cilium:audit-off:
+    desc: Disable Cilium policy audit mode cluster-wide (return to full enforcement)
+    cmds:
+      - helm upgrade {{.CILIUM_RELEASE}} cilium/cilium
+          --namespace {{.CILIUM_NAMESPACE}}
+          --version {{.CILIUM_VERSION}}
+          -f {{.CILIUM_VALUES}}
+          --set policyAuditMode=false
+          --wait --timeout 10m
+      - task: cilium:status
+
   hubble:
     desc: Stream live network flows from the local Cilium agent (Ctrl-C to stop)
     interactive: true

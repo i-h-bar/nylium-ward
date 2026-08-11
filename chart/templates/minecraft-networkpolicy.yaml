@@ -32,7 +32,8 @@ spec:
         {{- if eq .Values.networkPolicy.phase "install" }}
         - matchName: "api.curseforge.com"
         - matchName: "edge.forgecdn.net"
-        - matchName: "media.forgecdn.net"
+        - matchName: "mediafilez.forgecdn.net"
+        - matchName: "launchermeta.mojang.com"
         - matchName: "piston-meta.mojang.com"
         - matchName: "piston-data.mojang.com"
         - matchName: "resources.download.minecraft.net"

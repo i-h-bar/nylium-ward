@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: minecraft-connectivity-config
+  labels:
+    {{- include "mc.labels" . | nindent 4 }}
+data:
+  # Mirrors the Connectivity mod's own default connectivity.json (as of
+  # connectivity-fabric-1.21.11-7.6.jar) so every field survives a modpack
+  # reinstall, with malformedtraffic.enabled forced off. If a modpack upgrade
+  # bumps this mod and adds new config keys, diff against
+  # /data/config/connectivity.json in the running pod and update this file.
+  #
+  # malformedtraffic is a per-source-IP block: after enough bad packets from
+  # one IP it drops everything else from that IP. Because playit relays every
+  # player through its own single pod IP, one internet scanner sending
+  # garbage to the exposed public port collateral-blocks real joins too — it
+  # already happened once. CiliumNetworkPolicy/minecraft is the actual
+  # boundary here (only the playit pod can reach minecraft:25565 at all), so
+  # this app-layer check is redundant on top of it and only added false
+  # positives — disabled rather than maintaining an allowlist keyed on
+  # playit's pod IP, which isn't pinnable and changes on every playit pod
+  # restart.
+  connectivity.json: |
+    {
+      "disableLoginLimits": {
+        "disableLoginLimits": true
+      },
+      "disablePacketLimits": {
+        "disablePacketLimits": true
+      },
+      "disableChatVerificationDisconnect": {
+        "disableChatVerificationDisconnect": true
+      },
+      "debugPrintMessages": {
+        "debugPrintMessages": false
+      },
+      "logintimeout": {
+        "logintimeout": 120
+      },
+      "disconnectTimeout": {
+        "disconnectTimeout": 60
+      },
+      "packetHistoryMinutes": {
+        "packetHistoryMinutes": 5
+      },
+      "malformedtraffic": {
+        "enabled": false,
+        "proxywhitelist": []
+      },
+      "showFullResourceLocationException": {
+        "showFullResourceLocationException": false
+      }
+    }

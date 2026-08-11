@@ -21,11 +21,7 @@ spec:
         # Rolls the pod when server config changes, so `helm upgrade` alone
         # is enough to apply a new pinned modpack file id.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
-        {{- if .Values.networkPolicy.auditMode }}
-        # Cilium logs what would be dropped via Hubble but enforces nothing.
-        # See the rollout procedure in the Cilium network security design doc.
-        policy.cilium.io/audit-mode: "true"
-        {{- end }}
+        checksum/connectivity-config: {{ include (print $.Template.BasePath "/connectivity-configmap.yaml") . | sha256sum }}
     spec:
       # The image traps SIGTERM and sends `stop` via RCON, waiting up to
       # STOP_DURATION (60s). The 30s default would SIGKILL mid-save.
@@ -74,7 +70,16 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+            # The image copies anything here into /data/config on every
+            # startup, overwriting existing files — that's what lets this
+            # override the mod's own persisted default.
+            - name: connectivity-config
+              mountPath: /config/connectivity.json
+              subPath: connectivity.json
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: minecraft-data
+        - name: connectivity-config
+          configMap:
+            name: minecraft-connectivity-config

@@ -10,6 +10,14 @@
 # intent: kube-proxy handles Services, Cilium handles CNI/policy/visibility.
 kubeProxyReplacement: false
 
+# false = full enforcement (default). While discovering a phase's FQDN
+# allowlist, flip cluster-wide with `task cilium:audit-on` (Cilium then logs
+# what would be dropped via Hubble but drops nothing); `task cilium:audit-off`
+# reverts. There's no working per-pod audit-mode annotation in Cilium, so this
+# is the only real audit-mode switch — it applies to every endpoint, not just
+# the one you're debugging.
+policyAuditMode: false
+
 # Matches the k3s config.yaml written by scripts/setup/common.sh
 # (flannel-backend: none, disable-network-policy: true).
 operator:
