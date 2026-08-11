@@ -1,0 +1,20 @@
+# Cilium Helm values. Chart version is pinned in Taskfile.yaml's CILIUM_VERSION,
+# not here — this file only holds values, never the version.
+#
+# kube-proxy is left running (no kubeProxyReplacement) — an unrelated capability
+# to the containment/visibility goals this repo needs Cilium for.
+
+# Matches the k3s config.yaml written by scripts/setup/common.sh
+# (flannel-backend: none, disable-network-policy: true).
+operator:
+  replicas: 1   # single-node cluster; the chart default (2) would never both schedule
+
+hubble:
+  enabled: true          # local per-node socket only — `task hubble` execs into the
+                          # cilium-agent pod directly, no Relay needed on one node.
+  relay:
+    enabled: false        # flip to true only if adding the Hubble UI later
+  ui:
+    enabled: false        # flip to true (with relay.enabled) for the web dashboard;
+                           # adds ~150-250Mi permanently resident. See the design doc's
+                           # Decisions table for the resource-footprint reasoning.

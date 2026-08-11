@@ -6,12 +6,45 @@ vars:
   DEPLOY: deploy/minecraft
   POD_SELECTOR: app.kubernetes.io/name=minecraft
   EXPORTS: ./exports
+  CILIUM_NAMESPACE: kube-system
+  CILIUM_RELEASE: cilium
+  CILIUM_VERSION: "1.20.0"
+  CILIUM_VALUES: ./cilium/values.yaml
 
 tasks:
   default:
     cmds:
       - task --list-all
     silent: true
+
+  cilium:up:
+    desc: Install or upgrade Cilium (CNI + Hubble) into kube-system
+    cmds:
+      - helm repo add cilium https://helm.cilium.io/ --force-update
+      - helm repo update cilium
+      - helm upgrade --install {{.CILIUM_RELEASE}} cilium/cilium
+          --namespace {{.CILIUM_NAMESPACE}}
+          --version {{.CILIUM_VERSION}}
+          -f {{.CILIUM_VALUES}}
+          --wait --timeout 10m
+      - task: cilium:status
+
+  cilium:status:
+    desc: Show Cilium's DaemonSet/operator rollout status
+    cmds:
+      - kubectl -n {{.CILIUM_NAMESPACE}} rollout status daemonset/cilium --timeout=5m
+      - kubectl -n {{.CILIUM_NAMESPACE}} rollout status deployment/cilium-operator --timeout=5m
+      - kubectl -n {{.CILIUM_NAMESPACE}} get pods -l k8s-app=cilium
+
+  hubble:
+    desc: Stream live network flows from the local Cilium agent (Ctrl-C to stop)
+    interactive: true
+    cmds:
+      - |
+        set -euo pipefail
+        POD=$(kubectl -n {{.CILIUM_NAMESPACE}} get pod -l k8s-app=cilium \
+          -o jsonpath='{.items[0].metadata.name}')
+        kubectl -n {{.CILIUM_NAMESPACE}} exec -it "$POD" -- hubble observe --follow
 
   secrets:
     desc: Create or update the Kubernetes secret from .env

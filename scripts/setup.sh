@@ -42,7 +42,7 @@ require_sudo
 check_wsl_systemd
 
 log_info "Setting up for target: $TARGET"
-log_info "This will install: k3s (Kubernetes, incl. kubectl), Helm, and Task."
+log_info "This will install: k3s (Kubernetes, incl. kubectl), Helm, Cilium (CNI), and Task."
 read -r -p "Continue? [y/N] " confirm
 case "$confirm" in
   [yY]|[yY][eE][sS]) ;;
@@ -56,6 +56,7 @@ install_prereqs
 install_k3s
 install_helm
 install_task
+install_cilium
 
 log_info "Done. Verify with:"
 log_info "  kubectl version --client && helm version --short && task --version"
