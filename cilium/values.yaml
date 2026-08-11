@@ -1,8 +1,14 @@
 # Cilium Helm values. Chart version is pinned in Taskfile.yaml's CILIUM_VERSION,
 # not here — this file only holds values, never the version.
 #
-# kube-proxy is left running (no kubeProxyReplacement) — an unrelated capability
-# to the containment/visibility goals this repo needs Cilium for.
+# kube-proxy is left running — an unrelated capability to the containment/
+# visibility goals this repo needs Cilium for. Cilium's chart defaults
+# kubeProxyReplacement to true (full replacement) as of 1.14+, which on k3s
+# breaks Service routing (including CoreDNS -> the kubernetes.default API
+# Service) unless k8sServiceHost/k8sServicePort are also set. Explicitly
+# disabling it here is simpler than configuring that, and matches the actual
+# intent: kube-proxy handles Services, Cilium handles CNI/policy/visibility.
+kubeProxyReplacement: false
 
 # Matches the k3s config.yaml written by scripts/setup/common.sh
 # (flannel-backend: none, disable-network-policy: true).
