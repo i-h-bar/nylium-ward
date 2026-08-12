@@ -31,6 +31,7 @@ spec:
     - toFQDNs:
         {{- if eq .Values.networkPolicy.phase "install" }}
         - matchName: "api.curseforge.com"
+        - matchName: "curseforge.com"
         - matchName: "edge.forgecdn.net"
         - matchName: "mediafilez.forgecdn.net"
         - matchName: "launchermeta.mojang.com"
