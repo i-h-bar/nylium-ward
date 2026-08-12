@@ -114,9 +114,17 @@ log "modpack targets Minecraft $MC_VERSION"
 
 MANIFEST="$(curl -sS "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")" \
   || die_with_fallback "could not reach piston-meta.mojang.com"
+if ! jq -e . >/dev/null 2>&1 <<<"$MANIFEST"; then
+  die_with_fallback "piston-meta.mojang.com did not return valid JSON (got redirected/blocked?)"
+fi
 VERSION_URL="$(echo "$MANIFEST" | jq -r --arg v "$MC_VERSION" '.versions[] | select(.id==$v) | .url' || true)"
 if [ -z "$VERSION_URL" ]; then
   die_with_fallback "Mojang's manifest has no entry for Minecraft $MC_VERSION"
+fi
+# VERSION_URL came out of the manifest response, not this script — pin it to
+# the same host piston-meta.mojang.com before curling it anywhere.
+if [[ ! "$VERSION_URL" =~ ^https://piston-meta\.mojang\.com/ ]]; then
+  die_with_fallback "Mojang manifest returned an unexpected URL for $MC_VERSION: $VERSION_URL"
 fi
 
 VERSION_JSON="$(curl -sS "$VERSION_URL")" \

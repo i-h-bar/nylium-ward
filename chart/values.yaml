@@ -14,8 +14,8 @@ image:
 # Find the slug in the modpack URL: curseforge.com/minecraft/modpacks/<slug>
 # Pin fileId so a pod restart can never silently upgrade the pack.
 modpack:
-  slug: "jaffa-factory-2"
-  fileId: "7271783"
+  slug: "deceasedcraft"
+  fileId: "8448820"
 
 server:
   memory: 6G            # JVM heap. Keep resources.limits.memory ~2Gi above this.
