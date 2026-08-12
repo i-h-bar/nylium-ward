@@ -162,6 +162,8 @@ never goes ready, that's the first thing to suspect.
 | `task cilium:up` | Install or upgrade Cilium itself |
 | `task cilium:status` | Cilium DaemonSet/operator rollout status |
 | `task hubble` | Stream live network flows (Ctrl-C to stop) |
+| `task netpol:install` | Manually widen the network policy (escape hatch — pair with `netpol:steady`) |
+| `task netpol:steady` | Manually narrow the network policy back down |
 
 ## Troubleshooting
 
