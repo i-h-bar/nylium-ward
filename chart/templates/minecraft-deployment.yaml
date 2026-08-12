@@ -22,6 +22,7 @@ spec:
         # is enough to apply a new pinned modpack file id.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         checksum/connectivity-config: {{ include (print $.Template.BasePath "/connectivity-configmap.yaml") . | sha256sum }}
+        checksum/fml-config: {{ include (print $.Template.BasePath "/fml-configmap.yaml") . | sha256sum }}
     spec:
       # The image traps SIGTERM and sends `stop` via RCON, waiting up to
       # STOP_DURATION (60s). The 30s default would SIGKILL mid-save.
@@ -76,6 +77,9 @@ spec:
             - name: connectivity-config
               mountPath: /config/connectivity.json
               subPath: connectivity.json
+            - name: fml-config
+              mountPath: /config/fml.toml
+              subPath: fml.toml
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -83,3 +87,6 @@ spec:
         - name: connectivity-config
           configMap:
             name: minecraft-connectivity-config
+        - name: fml-config
+          configMap:
+            name: minecraft-fml-config

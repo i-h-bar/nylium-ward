@@ -97,7 +97,11 @@ cp .env.example .env
 ```
 
 Fill in `PLAYIT_SECRET_KEY` from the playit.gg dashboard. `CF_API_KEY` is
-optional — the image bundles a working key.
+optional — the image bundles a working key for installing the pack itself.
+Setting your own (free, from the
+[CurseForge Studio Console](https://console.curseforge.com/)) only changes
+*when* the correct Java version gets resolved — see
+[Java version](#java-version) below.
 
 ### 4. Deploy
 
@@ -144,6 +148,40 @@ enforcing, cluster-wide) and watch with `task hubble`; run
 environment under WSL2's kernel. It's expected to work but hasn't been
 exhaustively verified across WSL2 kernel versions — if `task cilium:status`
 never goes ready, that's the first thing to suspect.
+
+## Java version
+
+Forge/NeoForge/Fabric all bundle Mixin, which uses an ASM version too old to
+even read class files compiled by a too-new JDK — booting the wrong Java
+major doesn't just misbehave, it crashes the server outright. Different
+modpacks (and different Minecraft versions across a pack's own updates) need
+different Java majors, so `chart/values.yaml`'s `image.tag` can't be a fixed
+value.
+
+`task up`, `task upgrade`, and `task restart` all run
+`scripts/resolve-java-tag.sh` before deploying, which resolves the correct
+`itzg/minecraft-server` tag (`java17`, `java21`, ...) for the pinned
+`modpack.fileId` and overrides `image.tag` with it — you never need to pick
+this by hand. Resolution has two paths:
+
+- **`CF_API_KEY` set in `.env`** — resolves the modpack's Minecraft version
+  via the CurseForge API, on your machine, before any cluster change. The
+  correct tag is applied on the very first deploy.
+- **No `CF_API_KEY`** — deploys once with whatever tag is currently
+  configured, then polls the pod for `/data/.install-curseforge.env`. That
+  file is written by the install step as soon as the modpack download+extract
+  finishes, before Forge/NeoForge ever tries to boot the JVM — so it's there
+  even if the wrong Java then crashes the server. Once read, the deploy is
+  redone with the corrected tag. This costs one extra deploy cycle — the pod
+  may crash-loop briefly — whenever the modpack's Minecraft version changes.
+
+Either way, the Minecraft version is resolved to a required Java version via
+Mojang's own per-version manifest (the same source the real launcher uses),
+so there's no hand-maintained version-range table to keep up to date.
+
+The resolved tag is cached in `.cache/java-tag/<fileId>`, so repeat deploys
+of the same pinned pack are instant — delete the entry for a `fileId` to
+force re-detection.
 
 ## Operations
 

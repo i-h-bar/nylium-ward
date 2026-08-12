@@ -1,4 +1,10 @@
 # Minecraft server image. Pinned — never use `latest`.
+# tag is normally overridden by `task up`/`upgrade`/`restart`, which run
+# scripts/resolve-java-tag.sh to pick the itzg Java-version tag (javaNN)
+# matching the pinned modpack's Minecraft version — Forge/NeoForge/Fabric's
+# bundled Mixin can't even read JDK classes from a too-new JVM, so this has
+# to match. This value is only what's used for a raw `helm upgrade`/`template`
+# run that bypasses those tasks.
 image:
   repository: itzg/minecraft-server
   tag: "2026.8.0"
@@ -20,7 +26,14 @@ server:
   viewDistance: 10
   ops: []               # Minecraft usernames, e.g. [Notch, jeb_]
   tz: UTC
-  extraEnv: {}          # Any additional itzg env var, e.g. {SPAWN_PROTECTION: "0"}
+  extraEnv:             # Any additional itzg env var, e.g. {SPAWN_PROTECTION: "0"}
+    # Default connect/read timeout for Java's legacy URLConnection API, which
+    # most mods' bespoke "phone home" update/contributor checkers use without
+    # setting their own timeout — otherwise they inherit the JVM/OS default,
+    # which can be a minute or more per check. This only fills in a default;
+    # mods that already set their own timeout are unaffected. Doesn't touch
+    # the network policy or checkers built on the newer java.net.http.HttpClient.
+    JVM_DD_OPTS: "sun.net.client.defaultConnectTimeout=5000,sun.net.client.defaultReadTimeout=5000"
 
 # Optional server resource pack, pushed to every client on join.
 resourcePack:

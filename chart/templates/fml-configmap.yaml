@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: minecraft-fml-config
+  labels:
+    {{- include "mc.labels" . | nindent 4 }}
+data:
+  # Only overrides the one key we care about. Forge regenerates any other
+  # missing keys in this file back to its own defaults on boot (observed as
+  # "Configuration file ... is not correct. Correcting" in server logs), so
+  # there's no need to mirror the rest of fml.toml's schema here.
+  #
+  # versionCheck=true (Forge's default) makes every mod's VersionChecker hit
+  # its own update-check URL — a different arbitrary third-party host per mod
+  # author, sequentially, ~15s timeout each against our steady-phase egress
+  # policy, since none of those hosts are (or should be) allowlisted. On a
+  # 100+ mod pack that's several minutes of blocked-connection noise on every
+  # boot. The checker only ever surfaces a client-side "update available"
+  # icon on the main menu anyway, which a dedicated server never shows, so
+  # there's nothing lost by disabling it here.
+  fml.toml: |
+    versionCheck = false

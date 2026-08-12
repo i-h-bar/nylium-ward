@@ -82,10 +82,14 @@ tasks:
   up:
     desc: Install or upgrade the release (waits for the server to be ready, then narrows network policy)
     deps: [secrets]
+    vars:
+      JAVA_TAG:
+        sh: RELEASE={{.RELEASE}} CHART={{.CHART}} DEPLOY={{.DEPLOY}} ./scripts/resolve-java-tag.sh
     cmds:
-      - helm upgrade --install {{.RELEASE}} {{.CHART}}
+      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}}
           --set networkPolicy.phase=install --wait --timeout 20m
-      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set networkPolicy.phase=steady
+      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}}
+          --set networkPolicy.phase=steady
 
   netpol:install:
     desc: 'Manual escape hatch: widen the CiliumNetworkPolicy to the install-phase FQDN allowlist (remember to run netpol:steady once the pod is healthy)'
@@ -122,11 +126,16 @@ tasks:
 
   restart:
     desc: Restart the server pod (broad network policy while it comes back, narrowed once Ready)
+    vars:
+      JAVA_TAG:
+        sh: RELEASE={{.RELEASE}} CHART={{.CHART}} DEPLOY={{.DEPLOY}} ./scripts/resolve-java-tag.sh
     cmds:
-      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set networkPolicy.phase=install
+      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}}
+          --set networkPolicy.phase=install
       - kubectl rollout restart {{.DEPLOY}}
       - kubectl rollout status {{.DEPLOY}} --timeout=20m
-      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set networkPolicy.phase=steady
+      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}}
+          --set networkPolicy.phase=steady
 
   export:
     desc: Consistent world snapshot to ./exports (safe on a running server)
@@ -205,12 +214,16 @@ tasks:
 
   upgrade:
     desc: 'Apply a new pinned modpack fileId. Edit chart/values.yaml first, then run this.'
+    vars:
+      JAVA_TAG:
+        sh: RELEASE={{.RELEASE}} CHART={{.CHART}} DEPLOY={{.DEPLOY}} ./scripts/resolve-java-tag.sh
     cmds:
       - task: export
-      - helm upgrade --install {{.RELEASE}} {{.CHART}}
+      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}}
           --set networkPolicy.phase=install --wait --timeout 30m
       - kubectl rollout status {{.DEPLOY}} --timeout=30m
-      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set networkPolicy.phase=steady
+      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}}
+          --set networkPolicy.phase=steady
       - |
         echo "Upgrade complete. If the world is broken, roll back with:"
         echo "  task restore FILE=$(ls -t {{.EXPORTS}}/world-*.tar.gz | head -1)"
