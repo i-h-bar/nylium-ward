@@ -8,8 +8,8 @@ image:
 # Find the slug in the modpack URL: curseforge.com/minecraft/modpacks/<slug>
 # Pin fileId so a pod restart can never silently upgrade the pack.
 modpack:
-  slug: "all-the-mods-10"
-  fileId: "8558519"
+  slug: "vanilla-lightweight-reborn"
+  fileId: "8377193"
 
 server:
   memory: 6G            # JVM heap. Keep resources.limits.memory ~2Gi above this.
@@ -55,6 +55,21 @@ playit:
     repository: ghcr.io/playit-cloud/playit-agent
     tag: "1.0.10"
     pullPolicy: IfNotPresent
+
+# Cilium network policy. The chart is installed against a cluster that already
+# has Cilium as its CNI (see scripts/setup.sh / cilium/values.yaml) — these
+# values only control what CiliumNetworkPolicy allows, not whether Cilium runs.
+networkPolicy:
+  # install: broad egress needed to fetch a modpack (CurseForge/Forge/Fabric/
+  #          Mojang piston-meta). steady: narrow egress for a running server
+  #          (Mojang session-auth only). `task up`/`upgrade`/`restart` apply
+  #          install, wait for Ready, then apply steady automatically — this
+  #          value is just the last-applied state, not something to hand-edit
+  #          in normal use.
+  phase: install
+  # Modpack-specific egress additions (mods that phone home to their own
+  # servers), applied in both phases. e.g. ["updates.somemod.dev"]
+  extraAllowedFQDNs: []
 
 # Created by `task secrets` from .env — NOT managed by this chart.
 secretName: minecraft-secrets

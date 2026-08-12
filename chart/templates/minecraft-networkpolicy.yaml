@@ -1,0 +1,53 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: minecraft
+  labels:
+    {{- include "mc.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "mc.selectorLabels" . | nindent 6 }}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            {{- include "playit.selectorLabels" . | nindent 12 }}
+      toPorts:
+        - ports:
+            - port: "25565"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        {{- if eq .Values.networkPolicy.phase "install" }}
+        - matchName: "api.curseforge.com"
+        - matchName: "edge.forgecdn.net"
+        - matchName: "mediafilez.forgecdn.net"
+        - matchName: "launchermeta.mojang.com"
+        - matchName: "piston-meta.mojang.com"
+        - matchName: "piston-data.mojang.com"
+        - matchName: "resources.download.minecraft.net"
+        - matchName: "maven.minecraftforge.net"
+        - matchName: "maven.fabricmc.net"
+        - matchName: "meta.fabricmc.net"
+        - matchName: "maven.neoforged.net"
+        {{- end }}
+        - matchName: "sessionserver.mojang.com"
+        - matchName: "api.minecraftservices.com"
+        {{- range .Values.networkPolicy.extraAllowedFQDNs }}
+        - matchName: {{ . | quote }}
+        {{- end }}
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

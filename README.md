@@ -20,7 +20,8 @@ take several minutes.
 
 ## Prerequisites
 
-- A Kubernetes cluster (k3s) with the `local-path` storage class
+- A Kubernetes cluster (k3s) with the `local-path` storage class and
+  [Cilium](https://cilium.io) as its CNI — `./scripts/setup.sh` sets both up
 - `helm`, `kubectl`, and `task` on the machine you operate from
 - A [playit.gg](https://playit.gg) account with a TCP tunnel
 
@@ -119,6 +120,31 @@ Service address:
 That value comes from `service.clusterIP` in `chart/values.yaml`. It is pinned
 so you only ever set it once.
 
+## Network security
+
+Cilium enforces `CiliumNetworkPolicy` rules on both pods:
+
+- **minecraft**: only reachable from the `playit` pod on 25565. Outbound
+  traffic is default-deny except an FQDN allowlist — broad while a modpack is
+  being fetched (CurseForge, Forge/Fabric, Mojang piston-meta), narrowed to
+  just Mojang session-auth once the server is running. `task up`,
+  `task upgrade`, and `task restart` all switch between these automatically;
+  you don't need to think about it in normal use.
+- **playit**: nothing can reach it at all (it only dials out). Outbound is
+  broad — its relay endpoints aren't a stable, documented list to allowlist
+  by domain.
+
+If a modpack needs a domain outside the built-in list, add it to
+`networkPolicy.extraAllowedFQDNs` in `chart/values.yaml`. To find out what's
+being blocked, run `task cilium:audit-on` (logs drops via Hubble without
+enforcing, cluster-wide) and watch with `task hubble`; run
+`task cilium:audit-off` when done.
+
+**WSL2 note:** Cilium's eBPF datapath is not an officially supported
+environment under WSL2's kernel. It's expected to work but hasn't been
+exhaustively verified across WSL2 kernel versions — if `task cilium:status`
+never goes ready, that's the first thing to suspect.
+
 ## Operations
 
 | Command | What it does |
@@ -133,6 +159,53 @@ so you only ever set it once.
 | `task export` | Snapshot the world to `exports/` |
 | `task restore FILE=…` | Replace the world from a snapshot |
 | `task upgrade` | Apply a new pinned `fileId` (snapshots first) |
+| `task cilium:up` | Install or upgrade Cilium itself |
+| `task cilium:status` | Cilium DaemonSet/operator rollout status |
+| `task hubble` | Stream live network flows (Ctrl-C to stop) |
+| `task netpol:install` | Manually widen the network policy (escape hatch — pair with `netpol:steady`) |
+| `task netpol:steady` | Manually narrow the network policy back down |
+
+## Troubleshooting
+
+### CoreDNS / metrics-server / local-path-provisioner stuck or crash-looping
+
+Symptom: `kubectl -n kube-system logs coredns-...` shows repeated
+`[ERROR] plugin/kubernetes: Failed to watch: ... dial tcp 10.43.0.1:443:
+i/o timeout`, CoreDNS never goes `1/1 Ready`, and `metrics-server` /
+`local-path-provisioner` crash-loop with the same
+`dial tcp 10.43.0.1:443: i/o timeout` against the `kubernetes` Service
+(`10.43.0.1` is its ClusterIP).
+
+This is a host firewall problem, not a `CiliumNetworkPolicy` problem — rule
+that out first with `kubectl exec -n kube-system <cilium pod> --
+cilium-dbg endpoint list`; if every endpoint shows `POLICY ENFORCEMENT:
+Disabled`, policy isn't involved.
+
+Root cause: `ufw` (or another host firewall) with a default-deny `INPUT`
+policy and no rule for the pod CIDR (`10.0.0.0/24` by default here). Traffic
+a pod sends to a Service ClusterIP that resolves to *this node's own IP* —
+which is exactly what `kubernetes.default` does, since the API server backs
+onto the node itself — gets hairpinned by Cilium onto the host stack
+(`hubble observe` shows it as `FORWARDED ... to-stack`, confirming Cilium
+isn't the one dropping it) and then silently dropped by the firewall's
+`INPUT` chain. Pods in `hostNetwork: true` (there are none in this chart)
+wouldn't show the symptom, since same-host traffic goes out `OUTPUT`, which
+ufw allows by default — that asymmetry is the tell.
+
+Fix:
+
+```bash
+sudo ufw allow from 10.0.0.0/24
+```
+
+Then restart whatever was mid-crash when the fix landed — it doesn't
+self-heal without a kick:
+
+```bash
+kubectl -n kube-system delete pod -l k8s-app=kube-dns
+kubectl -n kube-system delete pod -l k8s-app=metrics-server
+kubectl -n kube-system delete pod -l app=local-path-provisioner
+```
 
 ## Upgrading the modpack
 

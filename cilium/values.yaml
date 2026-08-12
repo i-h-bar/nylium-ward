@@ -1,0 +1,34 @@
+# Cilium Helm values. Chart version is pinned in Taskfile.yaml's CILIUM_VERSION,
+# not here — this file only holds values, never the version.
+#
+# kube-proxy is left running — an unrelated capability to the containment/
+# visibility goals this repo needs Cilium for. Cilium's chart defaults
+# kubeProxyReplacement to true (full replacement) as of 1.14+, which on k3s
+# breaks Service routing (including CoreDNS -> the kubernetes.default API
+# Service) unless k8sServiceHost/k8sServicePort are also set. Explicitly
+# disabling it here is simpler than configuring that, and matches the actual
+# intent: kube-proxy handles Services, Cilium handles CNI/policy/visibility.
+kubeProxyReplacement: false
+
+# false = full enforcement (default). While discovering a phase's FQDN
+# allowlist, flip cluster-wide with `task cilium:audit-on` (Cilium then logs
+# what would be dropped via Hubble but drops nothing); `task cilium:audit-off`
+# reverts. There's no working per-pod audit-mode annotation in Cilium, so this
+# is the only real audit-mode switch — it applies to every endpoint, not just
+# the one you're debugging.
+policyAuditMode: false
+
+# Matches the k3s config.yaml written by scripts/setup/common.sh
+# (flannel-backend: none, disable-network-policy: true).
+operator:
+  replicas: 1   # single-node cluster; the chart default (2) would never both schedule
+
+hubble:
+  enabled: true          # local per-node socket only — `task hubble` execs into the
+                          # cilium-agent pod directly, no Relay needed on one node.
+  relay:
+    enabled: false        # flip to true only if adding the Hubble UI later
+  ui:
+    enabled: false        # flip to true (with relay.enabled) for the web dashboard;
+                           # adds ~150-250Mi permanently resident. See the design doc's
+                           # Decisions table for the resource-footprint reasoning.
