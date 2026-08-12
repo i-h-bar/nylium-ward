@@ -163,6 +163,48 @@ never goes ready, that's the first thing to suspect.
 | `task cilium:status` | Cilium DaemonSet/operator rollout status |
 | `task hubble` | Stream live network flows (Ctrl-C to stop) |
 
+## Troubleshooting
+
+### CoreDNS / metrics-server / local-path-provisioner stuck or crash-looping
+
+Symptom: `kubectl -n kube-system logs coredns-...` shows repeated
+`[ERROR] plugin/kubernetes: Failed to watch: ... dial tcp 10.43.0.1:443:
+i/o timeout`, CoreDNS never goes `1/1 Ready`, and `metrics-server` /
+`local-path-provisioner` crash-loop with the same
+`dial tcp 10.43.0.1:443: i/o timeout` against the `kubernetes` Service
+(`10.43.0.1` is its ClusterIP).
+
+This is a host firewall problem, not a `CiliumNetworkPolicy` problem — rule
+that out first with `kubectl exec -n kube-system <cilium pod> --
+cilium-dbg endpoint list`; if every endpoint shows `POLICY ENFORCEMENT:
+Disabled`, policy isn't involved.
+
+Root cause: `ufw` (or another host firewall) with a default-deny `INPUT`
+policy and no rule for the pod CIDR (`10.0.0.0/24` by default here). Traffic
+a pod sends to a Service ClusterIP that resolves to *this node's own IP* —
+which is exactly what `kubernetes.default` does, since the API server backs
+onto the node itself — gets hairpinned by Cilium onto the host stack
+(`hubble observe` shows it as `FORWARDED ... to-stack`, confirming Cilium
+isn't the one dropping it) and then silently dropped by the firewall's
+`INPUT` chain. Pods in `hostNetwork: true` (there are none in this chart)
+wouldn't show the symptom, since same-host traffic goes out `OUTPUT`, which
+ufw allows by default — that asymmetry is the tell.
+
+Fix:
+
+```bash
+sudo ufw allow from 10.0.0.0/24
+```
+
+Then restart whatever was mid-crash when the fix landed — it doesn't
+self-heal without a kick:
+
+```bash
+kubectl -n kube-system delete pod -l k8s-app=kube-dns
+kubectl -n kube-system delete pod -l k8s-app=metrics-server
+kubectl -n kube-system delete pod -l app=local-path-provisioner
+```
+
 ## Upgrading the modpack
 
 1. Edit `modpack.fileId` in `chart/values.yaml` and commit it.
