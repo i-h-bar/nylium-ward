@@ -1,4 +1,4 @@
-# Modded Minecraft Server
+# Nylium Ward
 
 A CurseForge modpack server running on Kubernetes, exposed through a
 [playit.gg](https://playit.gg) tunnel — no port forwarding required.
