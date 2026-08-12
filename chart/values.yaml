@@ -8,8 +8,8 @@ image:
 # Find the slug in the modpack URL: curseforge.com/minecraft/modpacks/<slug>
 # Pin fileId so a pod restart can never silently upgrade the pack.
 modpack:
-  slug: "vanilla-lightweight-reborn"
-  fileId: "8377193"
+  slug: "jaffa-factory-2"
+  fileId: "7271783"
 
 server:
   memory: 6G            # JVM heap. Keep resources.limits.memory ~2Gi above this.

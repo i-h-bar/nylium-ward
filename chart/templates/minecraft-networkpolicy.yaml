@@ -38,6 +38,7 @@ spec:
         - matchName: "piston-data.mojang.com"
         - matchName: "resources.download.minecraft.net"
         - matchName: "maven.minecraftforge.net"
+        - matchName: "files.minecraftforge.net"
         - matchName: "maven.fabricmc.net"
         - matchName: "meta.fabricmc.net"
         - matchName: "maven.neoforged.net"
