@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
-# Fetches playit.gg's published IP ranges and writes them into the chart as a
-# plain CIDR list, consumed by chart/templates/playit-networkpolicy.yaml via
-# Helm's .Files.Lines. Source: https://github.com/playit-cloud/network — the
-# full/union list (ips.txt), not the free- or premium-tier subset, so this
-# doesn't need touching if the playit.gg account's tier ever changes.
+# Fetches playit.gg's published IP ranges (github.com/playit-cloud/network,
+# full/union list) into a CIDR file consumed by playit-networkpolicy.yaml.
 #
 # Fails loudly and leaves the existing output file untouched on any error —
-# a bad fetch must never silently narrow (or blank out) what playit's egress
-# policy allows.
+# never silently narrows or blanks what playit's egress policy allows.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -30,9 +30,8 @@ spec:
               - matchPattern: "*.ply.gg"
               - matchName: "playit.cloud"
               - matchPattern: "*.playit.cloud"
-    # Relay path: playit forwards accepted connections to the minecraft
-    # Service on 25565. Without this, the toCIDRSet rule below wouldn't cover
-    # it — that rule is scoped to playit.gg's public ranges, not the cluster.
+    # Relay path to the minecraft Service — not covered by the toCIDRSet
+    # rule below, which is scoped to playit.gg's public ranges only.
     - toEndpoints:
         - matchLabels:
             {{- include "mc.selectorLabels" . | nindent 12 }}
@@ -40,12 +39,9 @@ spec:
         - ports:
             - port: "25565"
               protocol: TCP
-    # Control/API traffic. api.playit.gg is Cloudflare-fronted — it resolves
-    # to Cloudflare edge IPs, not any of playit's own published ranges below
-    # — confirmed live: the pod couldn't reach it at all under a CIDR-only
-    # rule. This has to be toFQDNs (follows whatever IP DNS actually
-    # returns), the same mechanism minecraft's allowlist uses, not a static
-    # CIDR set.
+    # Control/API traffic. api.playit.gg is Cloudflare-fronted (resolves
+    # outside playit's own ranges below), so this needs toFQDNs, not a
+    # static CIDR — confirmed live, a CIDR-only rule left it unreachable.
     - toFQDNs:
         - matchName: "playit.gg"
         - matchPattern: "*.playit.gg"
@@ -57,14 +53,9 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
-    # playit.gg's published relay/edge IP ranges (ips.txt, the full union of
-    # free+premium), synced from https://github.com/playit-cloud/network via
-    # `task playit:sync-ips` into chart/files/playit-allowed-cidrs.txt — for
-    # playit's own relay/data-plane infrastructure, which isn't Cloudflare-
-    # fronted the way the control API above is. "world" is gone entirely —
-    # it isn't scoped to the public internet and previously let this pod
-    # reach the local network, not just playit.gg. Comment lines and blanks
-    # in the source file are skipped below.
+    # playit's relay/data-plane IP ranges (not Cloudflare-fronted like the
+    # API above) — synced via `task playit:sync-ips` into the file below.
+    # Comment/blank lines there are skipped.
     - toCIDRSet:
         {{- range .Files.Lines "files/playit-allowed-cidrs.txt" }}
         {{- if and . (not (hasPrefix "#" .)) }}

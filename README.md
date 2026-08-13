@@ -308,3 +308,9 @@ slug and file id, since a modded world needs the identical pack build to open.
 - Everything deploys to the `default` namespace.
 - By using this project you accept the
   [Minecraft EULA](https://www.minecraft.net/eula).
+
+## License
+
+[AGPL-3.0](LICENSE). Provided as-is, with no warranty — see the license for
+the full disclaimer. You're responsible for your own deployment, secrets,
+and whatever modpack/mods you choose to run.

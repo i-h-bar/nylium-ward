@@ -91,11 +91,8 @@ tasks:
       JAVA_TAG:
         sh: RELEASE={{.RELEASE}} CHART={{.CHART}} DEPLOY={{.DEPLOY}} ./scripts/resolve-java-tag.sh
     cmds:
-      # Best-effort: an end user's checked-out playit-allowed-cidrs.txt could
-      # already be stale by the time they deploy. Failure (no network, GitHub
-      # unreachable) is not fatal — falls back to whatever's already
-      # committed, same as before this existed. Deliberate re-sync + review
-      # is still `task playit:sync-ips` on its own.
+      # Best-effort refresh so a stale checkout doesn't ship an outdated
+      # allowlist. Failure isn't fatal — falls back to what's committed.
       - cmd: ./scripts/sync-playit-ips.sh
         ignore_error: true
       - echo "Deploying — this can take 10+ minutes on first boot while the modpack downloads. Check progress with 'task logs' in another terminal."
