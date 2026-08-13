@@ -6,8 +6,6 @@ metadata:
     {{- include "mc.labels" . | nindent 4 }}
 spec:
   replicas: 1
-  # The /data PVC is ReadWriteOnce. A rolling update would start a second pod
-  # against the same world directory before the first is gone.
   strategy:
     type: Recreate
   selector:
@@ -18,8 +16,6 @@ spec:
       labels:
         {{- include "mc.selectorLabels" . | nindent 8 }}
       annotations:
-        # Rolls the pod when server config changes, so `helm upgrade` alone
-        # is enough to apply a new pinned modpack file id.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         checksum/connectivity-config: {{ include (print $.Template.BasePath "/connectivity-configmap.yaml") . | sha256sum }}
         checksum/fml-config: {{ include (print $.Template.BasePath "/fml-configmap.yaml") . | sha256sum }}
@@ -33,12 +29,26 @@ spec:
         options:
           - name: ndots
             value: "1"
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: minecraft
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}{{ if .Values.image.digest }}@{{ .Values.image.digest }}{{ end }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - CHOWN
+                - SETUID
+                - SETGID
+                - FOWNER
+                - DAC_OVERRIDE
           ports:
             - name: minecraft
               containerPort: 25565
@@ -46,8 +56,6 @@ spec:
           envFrom:
             - configMapRef:
                 name: minecraft-config
-          # Referenced individually, not via envFrom: an envFrom on the secret
-          # would inject PLAYIT_SECRET_KEY into this container.
           env:
             - name: CF_API_KEY
               valueFrom:
@@ -57,8 +65,6 @@ spec:
                   optional: true
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          # First boot downloads the whole modpack and generates a world.
-          # Without this, liveness kills the pod mid-install every time.
           startupProbe:
             exec:
               command: ["mc-health"]
@@ -77,9 +83,6 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
-            # The image copies anything here into /data/config on every
-            # startup, overwriting existing files — that's what lets this
-            # override the mod's own persisted default.
             - name: connectivity-config
               mountPath: /config/connectivity.json
               subPath: connectivity.json

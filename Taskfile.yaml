@@ -84,21 +84,36 @@ tasks:
       - kubectl create secret generic minecraft-secrets
           --from-env-file=.env --dry-run=client -o yaml | kubectl apply -f -
 
+  secrets:encrypt-rotate:
+    desc: 'One-time: migrate existing secrets after scripts/setup.sh enables k3s secrets-encryption on an already-running cluster (needs sudo; not needed on a fresh install)'
+    cmds:
+      - sudo k3s secrets-encrypt rotate-keys
+      - |
+        set -euo pipefail
+        echo "Waiting for re-encryption to finish..."
+        until sudo k3s secrets-encrypt status | grep -q "Current Rotation Stage: reencrypt_finished"; do
+          sleep 5
+        done
+        sudo k3s secrets-encrypt status
+      - echo "Secrets re-encryption complete."
+
   up:
     desc: Install or upgrade the release (waits for the server to be ready, then narrows network policy)
     deps: [secrets]
     vars:
       JAVA_TAG:
         sh: RELEASE={{.RELEASE}} CHART={{.CHART}} DEPLOY={{.DEPLOY}} ./scripts/resolve-java-tag.sh
+      JAVA_DIGEST:
+        sh: ./scripts/resolve-image-digest.sh registry-1.docker.io itzg/minecraft-server {{.JAVA_TAG}}
     cmds:
       # Best-effort refresh so a stale checkout doesn't ship an outdated
       # allowlist. Failure isn't fatal — falls back to what's committed.
       - cmd: ./scripts/sync-playit-ips.sh
         ignore_error: true
       - echo "Deploying — this can take 10+ minutes on first boot while the modpack downloads. Check progress with 'task logs' in another terminal."
-      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}}
+      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}} --set image.digest={{.JAVA_DIGEST}}
           --set networkPolicy.phase=install --wait --timeout 20m
-      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}}
+      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}} --set image.digest={{.JAVA_DIGEST}}
           --set networkPolicy.phase=steady
 
   netpol:install:
@@ -139,12 +154,14 @@ tasks:
     vars:
       JAVA_TAG:
         sh: RELEASE={{.RELEASE}} CHART={{.CHART}} DEPLOY={{.DEPLOY}} ./scripts/resolve-java-tag.sh
+      JAVA_DIGEST:
+        sh: ./scripts/resolve-image-digest.sh registry-1.docker.io itzg/minecraft-server {{.JAVA_TAG}}
     cmds:
-      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}}
+      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}} --set image.digest={{.JAVA_DIGEST}}
           --set networkPolicy.phase=install
       - kubectl rollout restart {{.DEPLOY}}
       - kubectl rollout status {{.DEPLOY}} --timeout=20m
-      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}}
+      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}} --set image.digest={{.JAVA_DIGEST}}
           --set networkPolicy.phase=steady
 
   export:
@@ -227,12 +244,14 @@ tasks:
     vars:
       JAVA_TAG:
         sh: RELEASE={{.RELEASE}} CHART={{.CHART}} DEPLOY={{.DEPLOY}} ./scripts/resolve-java-tag.sh
+      JAVA_DIGEST:
+        sh: ./scripts/resolve-image-digest.sh registry-1.docker.io itzg/minecraft-server {{.JAVA_TAG}}
     cmds:
       - task: export
-      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}}
+      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}} --set image.digest={{.JAVA_DIGEST}}
           --set networkPolicy.phase=install --set modpack.forceSynchronize=true --wait --timeout 30m
       - kubectl rollout status {{.DEPLOY}} --timeout=30m
-      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}}
+      - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}} --set image.digest={{.JAVA_DIGEST}}
           --set networkPolicy.phase=steady --set modpack.forceSynchronize=false
       - |
         echo "Upgrade complete. If the world is broken, roll back with:"

@@ -22,15 +22,32 @@ spec:
         options:
           - name: ndots
             value: "1"
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: playit
-          image: "{{ .Values.playit.image.repository }}:{{ .Values.playit.image.tag }}"
+          {{- if not .Values.playit.image.digest }}
+          {{- fail "playit.image.digest is required — see the comment above it in values.yaml" }}
+          {{- end }}
+          image: "{{ .Values.playit.image.repository }}:{{ .Values.playit.image.tag }}@{{ .Values.playit.image.digest }}"
           imagePullPolicy: {{ .Values.playit.image.pullPolicy }}
-          # The agent dials out; the tunnel destination is set in the
-          # playit.gg dashboard to the Service clusterIP on port 25565.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          args:
+            - --socket-path=/tmp/playitd.sock
           env:
             - name: SECRET_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secretName }}
                   key: PLAYIT_SECRET_KEY
+          resources:
+            {{- toYaml .Values.playit.resources | nindent 12 }}

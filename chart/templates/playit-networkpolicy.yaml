@@ -8,10 +8,6 @@ spec:
   endpointSelector:
     matchLabels:
       {{- include "playit.selectorLabels" . | nindent 6 }}
-  # Empty ingress list = default-deny ingress, no exceptions. Nothing calls
-  # into this pod — it dials out to playit.gg and forwards to the minecraft
-  # Service; the minecraft pod's own ingress rule is what actually admits
-  # players (via CiliumNetworkPolicy/minecraft).
   ingress: []
   egress:
     - toEndpoints:
@@ -30,8 +26,6 @@ spec:
               - matchPattern: "*.ply.gg"
               - matchName: "playit.cloud"
               - matchPattern: "*.playit.cloud"
-    # Relay path to the minecraft Service — not covered by the toCIDRSet
-    # rule below, which is scoped to playit.gg's public ranges only.
     - toEndpoints:
         - matchLabels:
             {{- include "mc.selectorLabels" . | nindent 12 }}
@@ -39,9 +33,6 @@ spec:
         - ports:
             - port: "25565"
               protocol: TCP
-    # Control/API traffic. api.playit.gg is Cloudflare-fronted (resolves
-    # outside playit's own ranges below), so this needs toFQDNs, not a
-    # static CIDR — confirmed live, a CIDR-only rule left it unreachable.
     - toFQDNs:
         - matchName: "playit.gg"
         - matchPattern: "*.playit.gg"
@@ -53,9 +44,6 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
-    # playit's relay/data-plane IP ranges (not Cloudflare-fronted like the
-    # API above) — synced via `task playit:sync-ips` into the file below.
-    # Comment/blank lines there are skipped.
     - toCIDRSet:
         {{- range .Files.Lines "files/playit-allowed-cidrs.txt" }}
         {{- if and . (not (hasPrefix "#" .)) }}
