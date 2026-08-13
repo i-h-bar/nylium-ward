@@ -14,8 +14,20 @@ image:
 # Find the slug in the modpack URL: curseforge.com/minecraft/modpacks/<slug>
 # Pin fileId so a pod restart can never silently upgrade the pack.
 modpack:
-  slug: "deceasedcraft"
-  fileId: "8448820"
+  slug: "rlcraft"
+  fileId: "4612979"
+  # CurseForge project slugs or numeric IDs to skip during mod install — for a
+  # mod whose file is hosted off CurseForge and that host has since gone
+  # defunct, this is the only way to unblock install without forking the pack.
+  # Skipping a mod the server actually needs will break it; that's a call only
+  # you can make per mod. Comma/space-delimited under the hood, so a plain
+  # YAML list works.
+  excludeMods: []
+  # Last-applied state for the installer's exclude/include re-evaluation —
+  # toggled automatically by `task upgrade` (true during the deploy, false
+  # once applied). Not something to hand-edit in normal use, same as
+  # networkPolicy.phase below.
+  forceSynchronize: false
 
 server:
   memory: 6G            # JVM heap. Keep resources.limits.memory ~2Gi above this.
@@ -26,6 +38,7 @@ server:
   viewDistance: 10
   ops: []               # Minecraft usernames, e.g. [Notch, jeb_]
   tz: UTC
+  enableCommandBlock: false   # itzg/vanilla default; some packs require true (check the pack's server README)
   extraEnv:             # Any additional itzg env var, e.g. {SPAWN_PROTECTION: "0"}
     # Default connect/read timeout for Java's legacy URLConnection API, which
     # most mods' bespoke "phone home" update/contributor checkers use without

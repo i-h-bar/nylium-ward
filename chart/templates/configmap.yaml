@@ -9,6 +9,8 @@ data:
   TYPE: "AUTO_CURSEFORGE"
   CF_SLUG: {{ required "modpack.slug is required — set it in chart/values.yaml (from the CurseForge modpack URL)" .Values.modpack.slug | quote }}
   CF_FILE_ID: {{ required "modpack.fileId is required — pin a CurseForge file id in chart/values.yaml so restarts cannot upgrade the pack" .Values.modpack.fileId | quote }}
+  CF_EXCLUDE_MODS: {{ join "," .Values.modpack.excludeMods | quote }}
+  CF_FORCE_SYNCHRONIZE: {{ .Values.modpack.forceSynchronize | quote }}
   MEMORY: {{ .Values.server.memory | quote }}
   USE_AIKAR_FLAGS: {{ .Values.server.aikarFlags | quote }}
   MOTD: {{ .Values.server.motd | quote }}
@@ -17,6 +19,7 @@ data:
   VIEW_DISTANCE: {{ .Values.server.viewDistance | quote }}
   TZ: {{ .Values.server.tz | quote }}
   OPS: {{ join "," .Values.server.ops | quote }}
+  ENABLE_COMMAND_BLOCK: {{ .Values.server.enableCommandBlock | quote }}
   ENABLE_RCON: "true"
   STOP_DURATION: "60"
   {{- if .Values.resourcePack.url }}

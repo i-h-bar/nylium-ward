@@ -245,6 +245,31 @@ kubectl -n kube-system delete pod -l k8s-app=metrics-server
 kubectl -n kube-system delete pod -l app=local-path-provisioner
 ```
 
+## Excluding a broken mod
+
+Some mods host their file off CurseForge's own CDN, at a URL controlled by the mod's author. If
+that host goes defunct, `AUTO_CURSEFORGE`'s per-mod install step fails on that one file and the
+whole modpack install is blocked — even though every other mod is fine.
+
+1. Find the mod's CurseForge project slug or numeric ID from its page URL
+   (`curseforge.com/minecraft/mc-mods/`**`the-mod-slug`**, or the numeric ID shown further down
+   the page).
+2. Add it to `modpack.excludeMods` in `chart/values.yaml`:
+   ```yaml
+   modpack:
+     excludeMods: [the-mod-slug]
+   ```
+3. `task upgrade`.
+
+Whether it's safe to drop a mod server-side is on you to judge — a client-only mod (UI, shaders
+helper) is generally safe to exclude, but a mod with real server-side logic may break the pack or
+desync from clients still running the full pack. `task upgrade` snapshots the world first, so a
+bad exclusion is recoverable the same way a bad `fileId` pin is (see below): `task restore
+FILE=...`.
+
+You don't need to touch `modpack.forceSynchronize` yourself — `task upgrade` flips it on for the
+deploy and back off once applied.
+
 ## Upgrading the modpack
 
 1. Edit `modpack.fileId` in `chart/values.yaml` and commit it.

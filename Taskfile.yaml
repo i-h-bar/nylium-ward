@@ -86,6 +86,7 @@ tasks:
       JAVA_TAG:
         sh: RELEASE={{.RELEASE}} CHART={{.CHART}} DEPLOY={{.DEPLOY}} ./scripts/resolve-java-tag.sh
     cmds:
+      - echo "Deploying — this can take 10+ minutes on first boot while the modpack downloads. Check progress with 'task logs' in another terminal."
       - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}}
           --set networkPolicy.phase=install --wait --timeout 20m
       - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}}
@@ -213,17 +214,17 @@ tasks:
         echo "Restored from {{.FILE}}"
 
   upgrade:
-    desc: 'Apply a new pinned modpack fileId. Edit chart/values.yaml first, then run this.'
+    desc: 'Apply a modpack.yaml change (fileId and/or excludeMods). Edit chart/values.yaml first, then run this.'
     vars:
       JAVA_TAG:
         sh: RELEASE={{.RELEASE}} CHART={{.CHART}} DEPLOY={{.DEPLOY}} ./scripts/resolve-java-tag.sh
     cmds:
       - task: export
       - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}}
-          --set networkPolicy.phase=install --wait --timeout 30m
+          --set networkPolicy.phase=install --set modpack.forceSynchronize=true --wait --timeout 30m
       - kubectl rollout status {{.DEPLOY}} --timeout=30m
       - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}}
-          --set networkPolicy.phase=steady
+          --set networkPolicy.phase=steady --set modpack.forceSynchronize=false
       - |
         echo "Upgrade complete. If the world is broken, roll back with:"
         echo "  task restore FILE=$(ls -t {{.EXPORTS}}/world-*.tar.gz | head -1)"
