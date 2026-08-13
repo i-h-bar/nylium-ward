@@ -135,14 +135,19 @@ Cilium enforces `CiliumNetworkPolicy` rules on both pods:
   `task upgrade`, and `task restart` all switch between these automatically;
   you don't need to think about it in normal use.
 - **playit**: nothing can reach it at all (it only dials out). Outbound is
-  broad — its relay endpoints aren't a stable, documented list to allowlist
-  by domain.
+  scoped to playit.gg's published relay IP ranges and known control domains
+  (`playit.gg`, `ply.gg`, `playit.cloud`) — not a broad allow.
 
 If a modpack needs a domain outside the built-in list, add it to
 `networkPolicy.extraAllowedFQDNs` in `chart/values.yaml`. To find out what's
 being blocked, run `task cilium:audit-on` (logs drops via Hubble without
 enforcing, cluster-wide) and watch with `task hubble`; run
 `task cilium:audit-off` when done.
+
+Playit's egress allowlist (which IP ranges the `playit` pod can reach) is
+synced from playit.gg's published ranges via `task playit:sync-ips`. Re-run
+it occasionally and commit the diff in `chart/files/playit-allowed-cidrs.txt`
+— it isn't run automatically.
 
 **WSL2 note:** Cilium's eBPF datapath is not an officially supported
 environment under WSL2's kernel. It's expected to work but hasn't been
@@ -202,6 +207,7 @@ force re-detection.
 | `task hubble` | Stream live network flows (Ctrl-C to stop) |
 | `task netpol:install` | Manually widen the network policy (escape hatch — pair with `netpol:steady`) |
 | `task netpol:steady` | Manually narrow the network policy back down |
+| `task playit:sync-ips` | Fetch playit.gg's published IP ranges (review and commit the diff by hand) |
 
 ## Troubleshooting
 

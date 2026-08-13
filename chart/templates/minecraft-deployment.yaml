@@ -27,6 +27,14 @@ spec:
       # The image traps SIGTERM and sends `stop` via RCON, waiting up to
       # STOP_DURATION (60s). The 30s default would SIGKILL mid-save.
       terminationGracePeriodSeconds: 120
+      # See the identical dnsConfig comment in playit-deployment.yaml. Not
+      # confirmed broken here the way playit was, but relying on Cilium's
+      # DNS-proxy rejection being fast enough for glibc/musl to fall through
+      # the ndots search chain isn't something to depend on long-term.
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
       securityContext:
         fsGroup: 1000
       containers:

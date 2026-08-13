@@ -14,6 +14,17 @@ spec:
       labels:
         {{- include "playit.selectorLabels" . | nindent 8 }}
     spec:
+      # Kubernetes' default ndots:5 makes any lookup with fewer than 5 dots
+      # (e.g. api.playit.gg) try several cluster-local search-domain suffixes
+      # before the real name — suffixes the DNS egress policy correctly
+      # rejects. playit's own resolver doesn't fall through to the bare name
+      # afterward (unlike glibc/musl), so it gets stuck retrying a query that
+      # can never succeed. ndots:1 skips the search-domain chain for any name
+      # with a dot, going straight to the real query.
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
       containers:
         - name: playit
           image: "{{ .Values.playit.image.repository }}:{{ .Values.playit.image.tag }}"
