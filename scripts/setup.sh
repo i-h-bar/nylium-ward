@@ -60,3 +60,8 @@ install_cilium
 
 log_info "Done. Verify with:"
 log_info "  kubectl version --client && helm version --short && task --version"
+log_info ""
+log_info "Optional extra: if this host is only ever reached via SSH (e.g. a Proxmox VM"
+log_info "you SSH into, then run kubectl/task locally), 'task harden:firewall' restricts"
+log_info "the k3s API server and a few other control-plane ports to localhost via ufw."
+log_info "Not run automatically — it's a deliberate, separate step. See the README."

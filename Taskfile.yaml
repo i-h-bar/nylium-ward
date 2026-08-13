@@ -17,6 +17,28 @@ tasks:
       - task --list-all
     silent: true
 
+  harden:firewall:
+    desc: 'Optional: restrict k3s/Cilium control-plane ports (6443, 10250, 9963, 9964, 4244, 4240) to localhost via ufw. For hosts you only ever reach by SSH then run kubectl/task locally. Never touches SSH/port 22 or ufw''s enable state (needs sudo).'
+    cmds:
+      - |
+        set -euo pipefail
+        if ! command -v ufw >/dev/null 2>&1; then
+          echo "ufw not found on this host — this task only supports ufw. Nothing done." >&2
+          echo "Install it first:" >&2
+          echo "  Debian/Ubuntu: sudo apt-get install -y ufw" >&2
+          echo "  Arch/CachyOS:  sudo pacman -S ufw" >&2
+          exit 1
+        fi
+        if ! sudo ufw status | grep -q "^Status: active"; then
+          echo "WARNING: ufw is installed but not active — these rules will be staged" >&2
+          echo "but won't actually block anything until ufw is enabled." >&2
+        fi
+        for port in 6443 10250 9963 9964 4244 4240; do
+          echo "Denying LAN access to $port/tcp (localhost stays allowed by ufw's default loopback rule)..."
+          sudo ufw deny "$port/tcp"
+        done
+        echo "Done. SSH (port 22) and ufw's enable state/default policies were not touched."
+
   cilium:up:
     desc: Install or upgrade Cilium (CNI + Hubble) into kube-system
     cmds:

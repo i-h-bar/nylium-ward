@@ -51,7 +51,9 @@ k3s_config_has_required_settings() {
   [ -f "$K3S_CONFIG_FILE" ] \
     && grep -q '^flannel-backend: *"\?none"\?' "$K3S_CONFIG_FILE" \
     && grep -q '^disable-network-policy: *true' "$K3S_CONFIG_FILE" \
-    && grep -q '^secrets-encryption: *true' "$K3S_CONFIG_FILE"
+    && grep -q '^secrets-encryption: *true' "$K3S_CONFIG_FILE" \
+    && grep -qE '^ *- *traefik *$' "$K3S_CONFIG_FILE" \
+    && grep -qE '^ *- *servicelb *$' "$K3S_CONFIG_FILE"
 }
 
 k3s_config_has_secrets_encryption() {
@@ -60,11 +62,16 @@ k3s_config_has_secrets_encryption() {
 
 write_k3s_config() {
   if [ "${DRY_RUN:-0}" = "1" ]; then
-    log_info "[dry-run] would write $K3S_CONFIG_FILE: flannel-backend: none, disable-network-policy: true, secrets-encryption: true"
+    log_info "[dry-run] would write $K3S_CONFIG_FILE: flannel-backend: none, disable-network-policy: true, secrets-encryption: true, disable: [traefik, servicelb]"
     return
   fi
   sudo mkdir -p "$(dirname "$K3S_CONFIG_FILE")"
-  printf 'flannel-backend: "none"\ndisable-network-policy: true\nsecrets-encryption: true\n' | sudo tee "$K3S_CONFIG_FILE" >/dev/null
+  # traefik/servicelb are k3s's bundled ingress controller and LoadBalancer
+  # implementation — this chart uses neither (ClusterIP Service, no Ingress
+  # resource), and traefik's LoadBalancer Service otherwise sits exposed on
+  # the host's real LAN-facing IP for nothing. Disabling both removes that
+  # surface instead of just firewalling something unused.
+  printf 'flannel-backend: "none"\ndisable-network-policy: true\nsecrets-encryption: true\ndisable:\n  - traefik\n  - servicelb\n' | sudo tee "$K3S_CONFIG_FILE" >/dev/null
 }
 
 install_k3s() {
@@ -78,9 +85,11 @@ install_k3s() {
       k3s_config_has_secrets_encryption && already_had_secrets_encryption=1
 
       log_warn "k3s is already installed on this machine, but its config is missing something this repo needs"
-      log_warn "(Cilium's flannel-disable settings and/or secrets-at-rest encryption)."
+      log_warn "(Cilium's flannel-disable settings, secrets-at-rest encryption, and/or disabling the"
+      log_warn "unused traefik/servicelb addons)."
       log_warn "Applying it restarts the k3s service and is CLUSTER-WIDE — it affects every workload"
-      log_warn "already running here (e.g. another repo's pods), not just this one."
+      log_warn "already running here (e.g. another repo's pods), not just this one. Disabling"
+      log_warn "traefik/servicelb specifically will remove them if anything else on this k3s uses them."
       if ! confirm "Reconfigure this k3s installation now?"; then
         log_error "Declined. Aborting — Cilium and this chart's CiliumNetworkPolicy resources cannot work without this change."
         exit 1
