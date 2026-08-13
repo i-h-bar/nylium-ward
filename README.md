@@ -18,6 +18,31 @@ The playit agent runs as its own Deployment so the tunnel stays connected
 while the server restarts — which matters, because a modpack upgrade can
 take several minutes.
 
+## Safety features
+
+`minecraft` runs a third-party modpack — real, if low-probability, remote-code-execution
+surface. This repo assumes that and is built to contain it, not just to run the server:
+
+- **Default-deny network policy on both pods.** `minecraft` and `playit` can each reach
+  only an explicit allowlist of domains/IPs/ports — nothing else, in either direction. See
+  [Network security](#network-security).
+- **Pods run locked down.** Non-root where the base image allows it, all Linux capabilities
+  dropped except the handful a startup sequence actually needs, no privilege escalation, no
+  Kubernetes API token mounted (neither pod needs one).
+- **Images pinned by content digest**, not just tag — a mutated or repointed tag can't
+  silently change what gets deployed. See [Image digest pinning](#image-digest-pinning).
+- **Secrets encrypted at rest** in k3s, optional and scripted. See
+  [Secrets encryption at rest](#secrets-encryption-at-rest).
+- **Unused attack surface removed, not just firewalled** — k3s's bundled `traefik`/`servicelb`
+  addons are disabled by default since this chart doesn't use either. See
+  [Disabled k3s addons](#disabled-k3s-addons).
+- **Optional host-level lockdown** for SSH-only hosts (e.g. a Proxmox VM) —
+  `task harden:firewall` restricts the k3s/Cilium control-plane ports to localhost.
+
+None of this is a substitute for keeping k3s, Cilium, and the base images patched, or for
+securing whatever you SSH into this from — see the Troubleshooting section below for the
+things deliberately left out of scope.
+
 ## Prerequisites
 
 - A Kubernetes cluster (k3s) with the `local-path` storage class and
@@ -204,11 +229,24 @@ force re-detection.
 | `task upgrade` | Apply a new pinned `fileId` (snapshots first) |
 | `task cilium:up` | Install or upgrade Cilium itself |
 | `task cilium:status` | Cilium DaemonSet/operator rollout status |
+| `task cilium:audit-on` | Log policy drops via Hubble cluster-wide without enforcing them |
+| `task cilium:audit-off` | Return Cilium to full enforcement |
 | `task hubble` | Stream live network flows (Ctrl-C to stop) |
 | `task netpol:install` | Manually widen the network policy (escape hatch — pair with `netpol:steady`) |
 | `task netpol:steady` | Manually narrow the network policy back down |
 | `task playit:sync-ips` | Fetch playit.gg's published IP ranges (review and commit the diff by hand) |
 | `task secrets:encrypt-rotate` | One-time: migrate existing secrets after enabling k3s secrets-encryption on an already-running cluster |
+| `task harden:firewall` | Optional: restrict k3s/Cilium control-plane ports to localhost via ufw (for SSH-only hosts) |
+
+## Disabled k3s addons
+
+`scripts/setup.sh` disables k3s's bundled `traefik` (ingress controller) and
+`servicelb` (LoadBalancer implementation) addons — this chart uses neither
+(the Service is `ClusterIP`, there's no `Ingress` resource), and left
+enabled, `traefik`'s `LoadBalancer` Service sits exposed on the host's real
+LAN-facing IP for no reason. Same detect/warn/confirm pattern as the other
+k3s config changes applies if you're re-running setup on an already-running
+k3s that predates this.
 
 ## Secrets encryption at rest
 
