@@ -68,6 +68,11 @@ tasks:
           -o jsonpath='{.items[0].metadata.name}')
         kubectl -n {{.CILIUM_NAMESPACE}} exec -it "$POD" -- hubble observe --follow
 
+  playit:sync-ips:
+    desc: 'Fetch playit.gg''s published IP ranges into chart/files/playit-allowed-cidrs.txt (review the git diff and commit by hand)'
+    cmds:
+      - ./scripts/sync-playit-ips.sh
+
   secrets:
     desc: Create or update the Kubernetes secret from .env
     preconditions:
@@ -86,6 +91,10 @@ tasks:
       JAVA_TAG:
         sh: RELEASE={{.RELEASE}} CHART={{.CHART}} DEPLOY={{.DEPLOY}} ./scripts/resolve-java-tag.sh
     cmds:
+      # Best-effort refresh so a stale checkout doesn't ship an outdated
+      # allowlist. Failure isn't fatal — falls back to what's committed.
+      - cmd: ./scripts/sync-playit-ips.sh
+        ignore_error: true
       - echo "Deploying — this can take 10+ minutes on first boot while the modpack downloads. Check progress with 'task logs' in another terminal."
       - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}}
           --set networkPolicy.phase=install --wait --timeout 20m

@@ -14,6 +14,14 @@ spec:
       labels:
         {{- include "playit.selectorLabels" . | nindent 8 }}
     spec:
+      # ndots:5's default search-domain expansion breaks playit's resolver —
+      # it doesn't fall through to the bare name after the cluster-local
+      # suffixes fail (confirmed live: infinite retry, tunnel never connects).
+      # ndots:1 skips straight to the real query.
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
       containers:
         - name: playit
           image: "{{ .Values.playit.image.repository }}:{{ .Values.playit.image.tag }}"

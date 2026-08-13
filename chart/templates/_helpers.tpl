@@ -17,3 +17,28 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- define "playit.selectorLabels" -}}
 app.kubernetes.io/name: playit
 {{- end -}}
+
+{{- define "mc.allowedFQDNEntries" -}}
+{{- if eq .Values.networkPolicy.phase "install" }}
+- matchName: "curseforge.com"
+- matchPattern: "*.curseforge.com"
+- matchName: "edge.forgecdn.net"
+- matchName: "mediafilez.forgecdn.net"
+- matchName: "launchermeta.mojang.com"
+- matchName: "piston-meta.mojang.com"
+- matchName: "piston-data.mojang.com"
+- matchName: "resources.download.minecraft.net"
+- matchName: "libraries.minecraft.net"
+- matchName: "maven.minecraftforge.net"
+- matchName: "files.minecraftforge.net"
+- matchName: "maven.creeperhost.net"
+- matchName: "maven.fabricmc.net"
+- matchName: "meta.fabricmc.net"
+- matchName: "maven.neoforged.net"
+{{- end }}
+- matchName: "sessionserver.mojang.com"
+- matchName: "api.minecraftservices.com"
+{{- range .Values.networkPolicy.extraAllowedFQDNs }}
+- matchName: {{ . | quote }}
+{{- end }}
+{{- end -}}

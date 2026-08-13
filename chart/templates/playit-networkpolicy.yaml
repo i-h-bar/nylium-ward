@@ -24,10 +24,14 @@ spec:
               protocol: ANY
           rules:
             dns:
-              - matchPattern: "*"
-    # Relay path: playit forwards accepted connections to the minecraft
-    # Service on 25565. Without this, "world" below doesn't cover it — world
-    # excludes intra-cluster pod-to-pod traffic on purpose.
+              - matchName: "playit.gg"
+              - matchPattern: "*.playit.gg"
+              - matchName: "ply.gg"
+              - matchPattern: "*.ply.gg"
+              - matchName: "playit.cloud"
+              - matchPattern: "*.playit.cloud"
+    # Relay path to the minecraft Service — not covered by the toCIDRSet
+    # rule below, which is scoped to playit.gg's public ranges only.
     - toEndpoints:
         - matchLabels:
             {{- include "mc.selectorLabels" . | nindent 12 }}
@@ -35,9 +39,26 @@ spec:
         - ports:
             - port: "25565"
               protocol: TCP
-    # Broad, not FQDN-scoped: playit's relay endpoints aren't documented or
-    # stable enough to enumerate confidently. "world" still excludes
-    # intra-cluster pod-to-pod traffic, so this pod still can't reach
-    # anything else in the cluster.
-    - toEntities:
-        - world
+    # Control/API traffic. api.playit.gg is Cloudflare-fronted (resolves
+    # outside playit's own ranges below), so this needs toFQDNs, not a
+    # static CIDR — confirmed live, a CIDR-only rule left it unreachable.
+    - toFQDNs:
+        - matchName: "playit.gg"
+        - matchPattern: "*.playit.gg"
+        - matchName: "ply.gg"
+        - matchPattern: "*.ply.gg"
+        - matchName: "playit.cloud"
+        - matchPattern: "*.playit.cloud"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # playit's relay/data-plane IP ranges (not Cloudflare-fronted like the
+    # API above) — synced via `task playit:sync-ips` into the file below.
+    # Comment/blank lines there are skipped.
+    - toCIDRSet:
+        {{- range .Files.Lines "files/playit-allowed-cidrs.txt" }}
+        {{- if and . (not (hasPrefix "#" .)) }}
+        - cidr: {{ . | quote }}
+        {{- end }}
+        {{- end }}
