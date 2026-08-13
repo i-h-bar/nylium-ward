@@ -47,43 +47,59 @@ confirm() {
 # INSTALL_K3S_EXEC only at first-install time) handles both cases identically.
 K3S_CONFIG_FILE="/etc/rancher/k3s/config.yaml"
 
-k3s_config_has_cilium_settings() {
+k3s_config_has_required_settings() {
   [ -f "$K3S_CONFIG_FILE" ] \
     && grep -q '^flannel-backend: *"\?none"\?' "$K3S_CONFIG_FILE" \
-    && grep -q '^disable-network-policy: *true' "$K3S_CONFIG_FILE"
+    && grep -q '^disable-network-policy: *true' "$K3S_CONFIG_FILE" \
+    && grep -q '^secrets-encryption: *true' "$K3S_CONFIG_FILE"
 }
 
-write_k3s_cilium_config() {
+k3s_config_has_secrets_encryption() {
+  [ -f "$K3S_CONFIG_FILE" ] && grep -q '^secrets-encryption: *true' "$K3S_CONFIG_FILE"
+}
+
+write_k3s_config() {
   if [ "${DRY_RUN:-0}" = "1" ]; then
-    log_info "[dry-run] would write $K3S_CONFIG_FILE: flannel-backend: none, disable-network-policy: true"
+    log_info "[dry-run] would write $K3S_CONFIG_FILE: flannel-backend: none, disable-network-policy: true, secrets-encryption: true"
     return
   fi
   sudo mkdir -p "$(dirname "$K3S_CONFIG_FILE")"
-  printf 'flannel-backend: "none"\ndisable-network-policy: true\n' | sudo tee "$K3S_CONFIG_FILE" >/dev/null
+  printf 'flannel-backend: "none"\ndisable-network-policy: true\nsecrets-encryption: true\n' | sudo tee "$K3S_CONFIG_FILE" >/dev/null
 }
 
 install_k3s() {
   if has_cmd k3s; then
-    if k3s_config_has_cilium_settings; then
-      log_info "k3s already installed and configured for Cilium, skipping ($(k3s --version | head -n1))"
+    if k3s_config_has_required_settings; then
+      log_info "k3s already installed and configured (Cilium CNI, secrets encryption), skipping ($(k3s --version | head -n1))"
     else
-      log_warn "k3s is already installed on this machine WITHOUT the flannel-disable config Cilium needs."
+      # Needed for the migration-hint message below, before write_k3s_config
+      # overwrites the file this checks against.
+      already_had_secrets_encryption=0
+      k3s_config_has_secrets_encryption && already_had_secrets_encryption=1
+
+      log_warn "k3s is already installed on this machine, but its config is missing something this repo needs"
+      log_warn "(Cilium's flannel-disable settings and/or secrets-at-rest encryption)."
       log_warn "Applying it restarts the k3s service and is CLUSTER-WIDE — it affects every workload"
       log_warn "already running here (e.g. another repo's pods), not just this one."
-      if ! confirm "Reconfigure this k3s installation's CNI for Cilium now?"; then
+      if ! confirm "Reconfigure this k3s installation now?"; then
         log_error "Declined. Aborting — Cilium and this chart's CiliumNetworkPolicy resources cannot work without this change."
         exit 1
       fi
-      write_k3s_cilium_config
+      write_k3s_config
       if [ "${DRY_RUN:-0}" = "1" ]; then
         log_info "[dry-run] would run: sudo systemctl restart k3s"
       else
         log_info "Restarting k3s..."
         sudo systemctl restart k3s
       fi
+      if [ "$already_had_secrets_encryption" = "0" ]; then
+        log_warn "secrets-encryption was just enabled on a cluster that already had secrets."
+        log_warn "Those existing secrets are NOT yet encrypted — run 'task secrets:encrypt-rotate' once"
+        log_warn "k3s is back up to migrate them. New secrets are encrypted automatically from now on."
+      fi
     fi
   else
-    write_k3s_cilium_config
+    write_k3s_config
     log_info "Installing k3s..."
     if [ "${DRY_RUN:-0}" = "1" ]; then
       log_info "[dry-run] would run: curl -sfL https://get.k3s.io | sh -"

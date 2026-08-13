@@ -5,9 +5,16 @@
 # bundled Mixin can't even read JDK classes from a too-new JVM, so this has
 # to match. This value is only what's used for a raw `helm upgrade`/`template`
 # run that bypasses those tasks.
+#
+# digest is resolved and set the same way (scripts/resolve-image-digest.sh,
+# via the same tasks) so the deployed image is pinned by content, not just a
+# mutable tag — empty here since it depends on whatever tag gets resolved.
+# Left empty, the image renders as repository:tag only (the raw-bypass case
+# above isn't digest-pinned either).
 image:
   repository: itzg/minecraft-server
   tag: "2026.8.0"
+  digest: ""
   pullPolicy: IfNotPresent
 
 # CurseForge modpack. Both values are REQUIRED; there are no defaults.
@@ -80,7 +87,23 @@ playit:
   image:
     repository: ghcr.io/playit-cloud/playit-agent
     tag: "1.0.10"
+    # Pinned by content, not just tag — a compromised or mutated tag can't
+    # silently change what gets deployed. Required (the chart fails to render
+    # without it), since unlike minecraft's tag this one is static, not
+    # resolved per-deploy — there's no legitimate reason for it to be empty.
+    # Re-resolve when bumping tag:
+    #   ./scripts/resolve-image-digest.sh ghcr.io playit-cloud/playit-agent <tag>
+    digest: "sha256:ca4766ced6e5bcee19137337808ec8fee5867c0910ac737efbb0bb452c378521"
     pullPolicy: IfNotPresent
+  # Observed idle/active usage is ~1m CPU / 5Mi memory (kubectl top); these
+  # give ~10-25x headroom rather than leaving the agent unbounded.
+  resources:
+    requests:
+      cpu: "10m"
+      memory: 32Mi
+    limits:
+      cpu: "200m"
+      memory: 128Mi
 
 # Cilium network policy. The chart is installed against a cluster that already
 # has Cilium as its CNI (see scripts/setup.sh / cilium/values.yaml) — these

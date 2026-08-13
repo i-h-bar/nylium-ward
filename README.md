@@ -208,6 +208,38 @@ force re-detection.
 | `task netpol:install` | Manually widen the network policy (escape hatch — pair with `netpol:steady`) |
 | `task netpol:steady` | Manually narrow the network policy back down |
 | `task playit:sync-ips` | Fetch playit.gg's published IP ranges (review and commit the diff by hand) |
+| `task secrets:encrypt-rotate` | One-time: migrate existing secrets after enabling k3s secrets-encryption on an already-running cluster |
+
+## Secrets encryption at rest
+
+`scripts/setup.sh` configures k3s with `secrets-encryption: true`, so
+Kubernetes Secrets (the tunnel's `PLAYIT_SECRET_KEY`, `CF_API_KEY`) are
+encrypted in etcd's backing store rather than only base64-encoded.
+
+- **Fresh install:** nothing else to do — every secret is encrypted from the
+  start.
+- **Already-running k3s that predates this:** re-running `scripts/setup.sh`
+  detects the gap, warns it's a cluster-wide restart, and asks to confirm
+  before touching it. After it restarts, run `task secrets:encrypt-rotate`
+  once — new secrets are encrypted automatically the moment the flag is on,
+  but *existing* ones need this explicit migration pass to actually get
+  rewritten in their encrypted form.
+
+## Image digest pinning
+
+Both images are pinned by content digest, not just tag — `chart/values.yaml`
+requires `playit.image.digest` (its tag is static, so there's no excuse for
+it being unset); `image.digest` for the `minecraft` image is resolved fresh
+on every `task up`/`upgrade`/`restart` by `scripts/resolve-image-digest.sh`,
+since its tag itself is chosen dynamically per-modpack. This means a tag
+being silently repointed at different image content (a compromised registry,
+a mutated `latest`-style tag) can't change what actually gets deployed.
+
+Bump `playit.image.tag` and re-resolve its digest with:
+
+```bash
+./scripts/resolve-image-digest.sh ghcr.io playit-cloud/playit-agent <new-tag>
+```
 
 ## Troubleshooting
 
