@@ -1,0 +1,9 @@
+[package]
+name = "mc-sniffer"
+version = "0.1.0"
+edition = "2024"
+
+# No dependencies yet on purpose. Parsing a byte slice needs nothing but the
+# standard library — pnet (for the raw socket / capture loop) gets added in a
+# later segment once the parser itself is done and understood.
+[dependencies]
