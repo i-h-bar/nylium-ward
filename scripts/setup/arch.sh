@@ -5,8 +5,8 @@
 # already sourced.
 
 install_prereqs() {
-  log_info "Installing base dependencies (curl, ca-certificates)..."
-  sudo pacman -Sy --needed --noconfirm curl ca-certificates
+  log_info "Installing base dependencies (curl, ca-certificates, jq)..."
+  sudo pacman -Sy --needed --noconfirm curl ca-certificates jq
 }
 
 install_helm() {

@@ -47,7 +47,7 @@ things deliberately left out of scope.
 
 - A Kubernetes cluster (k3s) with the `local-path` storage class and
   [Cilium](https://cilium.io) as its CNI — `./scripts/setup.sh` sets both up
-- `helm`, `kubectl`, and `task` on the machine you operate from
+- `helm`, `kubectl`, `task`, and `jq` on the machine you operate from
 - A [playit.gg](https://playit.gg) account with a TCP tunnel
 
 Run `./scripts/setup.sh` to install k3s, Helm, and Task in one shot. It

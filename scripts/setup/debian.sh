@@ -4,9 +4,9 @@
 # Sourced by scripts/setup.sh — expects common.sh already sourced.
 
 install_prereqs() {
-  log_info "Installing base dependencies (curl, gpg, ca-certificates)..."
+  log_info "Installing base dependencies (curl, gpg, ca-certificates, jq)..."
   sudo apt-get update
-  sudo apt-get install -y curl gpg ca-certificates apt-transport-https
+  sudo apt-get install -y curl gpg ca-certificates apt-transport-https jq
 }
 
 install_helm() {
