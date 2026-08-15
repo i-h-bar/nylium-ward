@@ -154,11 +154,10 @@ so you only ever set it once.
 Cilium enforces `CiliumNetworkPolicy` rules on both pods:
 
 - **minecraft**: only reachable from the `playit` pod on 25565. Outbound
-  traffic is default-deny except an FQDN allowlist — broad while a modpack is
-  being fetched (CurseForge, Forge/Fabric, Mojang piston-meta), narrowed to
-  just Mojang session-auth once the server is running. `task up`,
-  `task upgrade`, and `task restart` all switch between these automatically;
-  you don't need to think about it in normal use.
+  traffic is default-deny except an FQDN allowlist (CurseForge, Forge/Fabric,
+  Mojang piston-meta and session-auth) — always open, not just during a
+  deploy, since `AUTO_CURSEFORGE` calls out to `api.curseforge.com` on every
+  server boot to validate the installed modpack, not only the first install.
 - **playit**: nothing can reach it at all (it only dials out). Outbound is
   scoped to playit.gg's published relay IP ranges and known control domains
   (`playit.gg`, `ply.gg`, `playit.cloud`) — not a broad allow.
@@ -220,6 +219,7 @@ force re-detection.
 | `task up` | Install or upgrade, waiting for readiness |
 | `task down` | Uninstall (the world PVC is kept) |
 | `task status` | Pods, PVC, and service state |
+| `task mem` | Server pod's memory usage vs its container limit, plus stall time |
 | `task logs` | Stream server logs |
 | `task console` | RCON console — run `list`, `op <player>`, etc. |
 | `task restart` | Restart the server pod |
@@ -232,8 +232,6 @@ force re-detection.
 | `task cilium:audit-on` | Log policy drops via Hubble cluster-wide without enforcing them |
 | `task cilium:audit-off` | Return Cilium to full enforcement |
 | `task hubble` | Stream live network flows (Ctrl-C to stop) |
-| `task netpol:install` | Manually widen the network policy (escape hatch — pair with `netpol:steady`) |
-| `task netpol:steady` | Manually narrow the network policy back down |
 | `task playit:sync-ips` | Fetch playit.gg's published IP ranges (review and commit the diff by hand) |
 | `task secrets:encrypt-rotate` | One-time: migrate existing secrets after enabling k3s secrets-encryption on an already-running cluster |
 | `task harden:firewall` | Optional: restrict k3s/Cilium control-plane ports to localhost via ufw (for SSH-only hosts) |
@@ -320,6 +318,44 @@ kubectl -n kube-system delete pod -l k8s-app=kube-dns
 kubectl -n kube-system delete pod -l k8s-app=metrics-server
 kubectl -n kube-system delete pod -l app=local-path-provisioner
 ```
+
+### Client gets "mismatched mod channel list" for a mod that "shouldn't" need the server
+
+Symptom: server logs show `mc-image-helper` excluding a mod at install time
+(`Excluding mod file '<name>' ... due to configuration for this modpack:
+<curseforge-url>`), and clients that still have that mod installed get kicked
+on connect with Forge's `ModMismatchDisconnectedScreen` — "mismatched mod
+channel list", naming that mod specifically.
+
+Root cause: `AUTO_CURSEFORGE` installs consult a
+[curated exclude/include list](https://github.com/itzg/docker-minecraft-server/blob/master/files/cf-exclude-include.json)
+bundled with `mc-image-helper`, which globally excludes some mods as
+"client-only" to keep them off the server. That default is sometimes wrong —
+a mod can register a Forge network channel without declaring itself
+absent-from-server-safe, in which case Forge's mod-list handshake hard-rejects
+any client that still has it once the server doesn't. The bundled list
+already carries per-modpack overrides for a few packs hitting this with
+`particular-reforged` specifically (`beyond-depth`, `ftb-stoneblock-4`,
+`mc-eternal-2`) — if your pack isn't one of the overridden ones, you'll hit
+the same bug.
+
+Fix: force the server to install the mod anyway, via `CF_FORCE_INCLUDE_MODS`
+(documented for exactly this — "mods incorrectly tagged as client only") in
+`chart/values.yaml`. It takes one or more CurseForge project slugs or numeric
+IDs, comma- or space-delimited (same format as `modpack.excludeMods`):
+
+```yaml
+server:
+  extraEnv:
+    CF_FORCE_INCLUDE_MODS: "the-mod-slug"
+    # or multiple: "the-mod-slug,another-mod-slug"
+```
+
+Then `task upgrade`, same as [excluding a mod](#excluding-a-broken-mod) below —
+it flips `modpack.forceSynchronize` on for the deploy so the exclude/include
+list gets re-evaluated. Worth reporting upstream too: if the mod genuinely
+needs to be on both sides, that's a gap in itzg's curated list for your
+modpack, not just this deployment.
 
 ## Excluding a broken mod
 

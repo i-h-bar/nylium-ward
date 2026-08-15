@@ -19,7 +19,6 @@ app.kubernetes.io/name: playit
 {{- end -}}
 
 {{- define "mc.allowedFQDNEntries" -}}
-{{- if eq .Values.networkPolicy.phase "install" }}
 - matchName: "curseforge.com"
 - matchPattern: "*.curseforge.com"
 - matchName: "edge.forgecdn.net"
@@ -35,7 +34,6 @@ app.kubernetes.io/name: playit
 - matchName: "maven.fabricmc.net"
 - matchName: "meta.fabricmc.net"
 - matchName: "maven.neoforged.net"
-{{- end }}
 - matchName: "sessionserver.mojang.com"
 - matchName: "api.minecraftservices.com"
 {{- range .Values.networkPolicy.extraAllowedFQDNs }}
