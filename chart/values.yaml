@@ -21,8 +21,8 @@ image:
 # Find the slug in the modpack URL: curseforge.com/minecraft/modpacks/<slug>
 # Pin fileId so a pod restart can never silently upgrade the pack.
 modpack:
-  slug: "deceasedcraft"
-  fileId: "8448820"
+  slug: "dawn-craft"
+  fileId: "7243862"
   # CurseForge project slugs or numeric IDs to skip during mod install — for a
   # mod whose file is hosted off CurseForge and that host has since gone
   # defunct, this is the only way to unblock install without forking the pack.
@@ -62,7 +62,7 @@ server:
     # installs it. Other packs (beyond-depth, ftb-stoneblock-4, mc-eternal-2)
     # have the same override upstream; deceasedcraft doesn't yet. Value is a
     # comma/space-delimited list of project slugs or IDs, same as excludeMods.
-    CF_FORCE_INCLUDE_MODS: "particular-reforged"
+    CF_FORCE_INCLUDE_MODS: "particular-reforged,nether-skeletons"
     # Default connect/read timeout for Java's legacy URLConnection API, which
     # most mods' bespoke "phone home" update/contributor checkers use without
     # setting their own timeout — otherwise they inherit the JVM/OS default,
