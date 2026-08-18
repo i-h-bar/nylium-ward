@@ -1,34 +1,3 @@
-//! Walks a raw captured frame down through Ethernet, IPv4, and TCP framing to
-//! get to the one thing the rest of this crate actually cares about: a TCP
-//! payload, and which 4-tuple it belongs to. This is the same kind of
-//! byte-offset header-walking you'll do again (with far fewer conveniences)
-//! if this ever becomes an eBPF program — no `pnet`/libpcap equivalent exists
-//! there, so it's worth learning to do by hand now.
-//!
-//! See `../FRAME_EXAMPLES.md` for a real, byte-by-byte worked example — a
-//! full Ethernet+IPv4+TCP frame carrying one of the same Minecraft handshake
-//! payloads from `PACKET_EXAMPLES.md`, so you can trace a packet all the way
-//! from the wire down to what `parse_handshake` already knows how to read.
-//!
-//! ## Scope decisions worth knowing up front
-//! - **IPv4 only.** This pod's cluster networking is IPv4-only already (see
-//!   the playit-hardening design doc's note on this host having no IPv6
-//!   route) — IPv6 support is a deliberate non-goal, not an oversight.
-//! - **TCP only.** Nothing else this sniffer cares about (Minecraft traffic)
-//!   runs over anything else.
-//! - **Checksums are not validated.** A bad IP/TCP checksum means "corrupted
-//!   in transit," which is a different concern from "not a valid Minecraft
-//!   packet" — out of scope here.
-//! - **`parse_handshake` still needs help before you can call it.** This
-//!   module gets you the TCP payload. `parse_handshake` expects the packet
-//!   *body* — packet ID onward, with the outer Minecraft length-prefix VarInt
-//!   already stripped. Stripping that prefix and deciding *which* payload
-//!   bytes are "the first packet of a new connection" is flow-tracking logic
-//!   for the next segment (the capture loop in `main.rs`), not this module.
-
-/// The one Ethertype value this crate looks for — everything else (ARP,
-/// IPv6, VLAN tags, ...) is out of scope and reported as
-/// `NetError::UnsupportedEthertype`.
 pub const ETHERTYPE_IPV4: u16 = 0x0800;
 
 /// The one IP protocol number this crate looks for (UDP is 17, ICMP is 1,
@@ -38,7 +7,6 @@ pub const IP_PROTOCOL_TCP: u8 = 6;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EthernetFrame<'a> {
     pub ethertype: u16,
-    /// Everything after the 14-byte Ethernet header — handed to `parse_ipv4`.
     pub payload: &'a [u8],
 }
 
@@ -64,33 +32,38 @@ pub struct TcpFlags {
     pub psh: bool,
 }
 
-// pub struct TcpFlags(u8);
-//
-// impl TcpFlags {
-//
-// }
+const FIN_BIT: u8 = 0b00000001;
+const SYN_BIT: u8 = 0b00000010;
+const RST_BIT: u8 = 0b00000100;
+const PSH_BIT: u8 = 0b00001000;
+const ACK_BIT: u8 = 0b00010000;
+
+impl From<u8> for TcpFlags {
+    fn from(flag: u8) -> Self {
+        Self {
+            syn: (flag & SYN_BIT) != 0,
+            ack: (flag & ACK_BIT) != 0,
+            fin: (flag & FIN_BIT) != 0,
+            rst: (flag & RST_BIT) != 0,
+            psh: (flag & PSH_BIT) != 0,
+        }
+    }
+}
+
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TcpSegment<'a> {
     pub source_port: u16,
     pub destination_port: u16,
     pub flags: TcpFlags,
-    /// Everything after the TCP header — this is what eventually reaches
-    /// `parse_handshake` (once the flow-tracking loop decides it's worth
-    /// looking at, and strips the Minecraft length-prefix VarInt).
     pub payload: &'a [u8],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NetError {
-    /// The buffer was shorter than the header currently being read needs —
-    /// carries what was actually needed, for whichever header hit it.
     TooShort { needed: usize, got: usize },
-    /// Not an Ethertype this crate handles (see `ETHERTYPE_IPV4`).
     UnsupportedEthertype(u16),
-    /// The IP version nibble wasn't 4.
     UnsupportedIpVersion(u8),
-    /// Not a protocol this crate handles (see `IP_PROTOCOL_TCP`).
     UnsupportedIpProtocol(u8),
 }
 
@@ -151,26 +124,27 @@ pub fn parse_ipv4(packet: &[u8]) -> Result<Ipv4Packet<'_>, NetError> {
     )
 }
 
-/// Parses a TCP header — which, like IPv4, has a **variable length**: the
-/// top 4 bits of byte 12 are the Data Offset, a count of 32-bit words (same
-/// idea as IPv4's IHL, different field name). `header_len = data_offset * 4`.
-///
-/// Fixed-offset fields:
-/// - bytes 0-1: source port, big-endian
-/// - bytes 2-3: destination port, big-endian
-/// - byte 12, high nibble: data offset (as above)
-/// - byte 13: flags — one bit each, low to high: `FIN=0x01, SYN=0x02,
-///   RST=0x04, PSH=0x08, ACK=0x10` (URG/ECE/CWR exist too but nothing here
-///   needs them)
-///
-/// # Your task
-/// Compute `header_len` from byte 12's high nibble; `NetError::TooShort` if
-/// `segment.len() < header_len` (this also covers the "segment is shorter
-/// than the fixed 20-byte minimum" case, since `header_len` is always
-/// `>= 20`). Read the two ports. Read byte 13 and mask out each flag bit into
-/// `TcpFlags`. `payload` is `&segment[header_len..]`.
 pub fn parse_tcp(segment: &[u8]) -> Result<TcpSegment<'_>, NetError> {
-    todo!("compute header_len from the data-offset nibble, read ports + flags, slice the payload")
+    if segment.len() < 20 {
+        return Err(NetError::TooShort { needed: 20, got: segment.len() });
+    }
+    let header_len = ((segment[12] >> 4) * 4) as usize;
+
+    if segment.len() < header_len || header_len < 20 {
+        return Err(NetError::TooShort { needed: header_len.max(20), got: segment.len() });
+    }
+
+    let source_port = u16::from_be_bytes(segment[..2].try_into().unwrap());
+    let destination_port = u16::from_be_bytes(segment[2..4].try_into().unwrap());
+
+    Ok(
+        TcpSegment {
+            source_port,
+            destination_port,
+            flags: segment[13].into(),
+            payload: &segment[header_len..],
+        }
+    )
 }
 
 #[cfg(test)]
@@ -404,6 +378,27 @@ mod tests {
             assert_eq!(
                 super::super::parse_tcp(&buf),
                 Err(NetError::TooShort { needed: 20, got: 19 })
+            );
+        }
+
+        #[test]
+        fn rejects_undersized_header_even_when_data_offset_claims_it_fits() {
+            // data offset 0 -> header_len computes to 0, which must not
+            // bypass the real 20-byte minimum TCP header size (a legitimate
+            // segment can't have a data offset below 5). Without that floor,
+            // the header bytes (ports, flags, etc.) would leak into
+            // `payload` instead of this returning an error.
+            #[rustfmt::skip]
+            let segment: [u8; 20] = [
+                0xD4, 0x31, 0x63, 0xDD,             // ports
+                0x00, 0x00, 0x00, 0x00,             // sequence number
+                0x00, 0x00, 0x00, 0x00,             // ack number
+                0x00, 0x02,                          // data offset 0, flags SYN
+                0x20, 0x00, 0x00, 0x00, 0x00, 0x00, // window, checksum, urgent
+            ];
+            assert_eq!(
+                super::super::parse_tcp(&segment),
+                Err(NetError::TooShort { needed: 20, got: 20 })
             );
         }
     }
