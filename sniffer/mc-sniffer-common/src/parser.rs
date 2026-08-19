@@ -1,9 +1,9 @@
-use std::fmt;
+use core::str;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Handshake {
+pub struct Handshake<'a> {
     pub protocol_version: i32,
-    pub server_address: String,
+    pub server_address: &'a str,
     pub server_port: u16,
     pub next_state: NextState,
 }
@@ -15,42 +15,27 @@ pub enum NextState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ParseError {
+pub enum ParseError<'a> {
     UnexpectedEof,
     VarIntTooLong,
     WrongPacketId(i32),
     InvalidUtf8,
     InvalidNextState(i32),
     NegativeLength(i32),
-    InvalidPort(Vec<u8>),
+    InvalidPort(&'a [u8]),
     TrailingBytes(usize),
 }
 
-impl fmt::Display for ParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ParseError::UnexpectedEof => write!(f, "ran out of bytes mid-field"),
-            ParseError::VarIntTooLong => write!(f, "VarInt longer than 5 bytes"),
-            ParseError::WrongPacketId(id) => write!(f, "expected packet ID 0x00, got {id:#x}"),
-            ParseError::InvalidUtf8 => write!(f, "server address bytes weren't valid UTF-8"),
-            ParseError::InvalidNextState(n) => write!(f, "next_state {n} is neither 1 nor 2"),
-            ParseError::NegativeLength(n) => write!(f, "length {n} is negative"),
-            ParseError::InvalidPort(port) => write!(f, "invalid port {port:?}"),
-            ParseError::TrailingBytes(len) => write!(f, "{len} trailing bytes in packet"),
-        }
-    }
-}
-
 const MAX_VARINT_BYTES: usize = 5;
-const CONTINUE_BIT: u8 = 0b10000000;
+const CONTINUE_BIT: u8 = 0b1000_0000;
 const SEGMENT_BIT: u8 = 0b0111_1111;
 
-pub fn read_varint(buf: &[u8]) -> Result<(i32, usize), ParseError> {
+fn read_varint(buf: &[u8]) -> Result<(i32, usize), ParseError<'_>> {
     let mut num: i32 = 0;
     let mut bytes_consumed = 0;
     let mut cont: bool = true;
     for (i, byte) in buf.iter().take(5).enumerate() {
-        num |= ((byte & SEGMENT_BIT) as i32) << (i * 7);
+        num |= (i32::from(byte & SEGMENT_BIT)) << (i * 7);
         cont = byte & CONTINUE_BIT != 0;
 
         if !cont {
@@ -70,7 +55,7 @@ pub fn read_varint(buf: &[u8]) -> Result<(i32, usize), ParseError> {
     Ok((num, bytes_consumed))
 }
 
-pub fn read_mc_string(buf: &[u8]) -> Result<(String, usize), ParseError> {
+fn read_mc_string(buf: &[u8]) -> Result<(&str, usize), ParseError<'_>> {
     let (len, consumed) = read_varint(buf)?;
     let len = usize::try_from(len).map_err(|_| ParseError::NegativeLength(len))?;
     let total = len + consumed;
@@ -79,12 +64,26 @@ pub fn read_mc_string(buf: &[u8]) -> Result<(String, usize), ParseError> {
     }
 
     Ok((
-        String::from_utf8(buf[consumed..len + 1].into()).map_err(|_| ParseError::InvalidUtf8)?,
+        str::from_utf8(buf[consumed..=len].into()).map_err(|_| ParseError::InvalidUtf8)?,
         total,
     ))
 }
 
-pub fn parse_handshake(buf: &[u8]) -> Result<Handshake, ParseError> {
+/// Parses a Minecraft handshake packet *body* — packet ID onward, with the
+/// outer Minecraft length-prefix `VarInt` already stripped.
+///
+/// # Errors
+/// Returns [`ParseError::WrongPacketId`] if the packet ID isn't `0`;
+/// [`ParseError::VarIntTooLong`] or [`ParseError::UnexpectedEof`] if any
+/// `VarInt` (packet ID, protocol version, string length, or next-state) is
+/// malformed or the buffer runs out mid-field; [`ParseError::NegativeLength`]
+/// if the server-address length `VarInt` decodes to a negative number;
+/// [`ParseError::InvalidUtf8`] if the server-address bytes aren't valid
+/// UTF-8; [`ParseError::InvalidPort`] if the port field can't be read as 2
+/// bytes; [`ParseError::InvalidNextState`] if the next-state `VarInt` is
+/// neither `1` nor `2`; and [`ParseError::TrailingBytes`] if bytes remain
+/// after an otherwise-valid handshake.
+pub fn parse_handshake(buf: &[u8]) -> Result<Handshake<'_>, ParseError<'_>> {
     let mut total = 0;
     let (pid, consumed) = read_varint(buf)?;
     total += consumed;
@@ -106,7 +105,7 @@ pub fn parse_handshake(buf: &[u8]) -> Result<Handshake, ParseError> {
     let server_port: u16 = u16::from_be_bytes(
         port_buf
             .try_into()
-            .map_err(|_| ParseError::InvalidPort(port_buf.to_vec()))?,
+            .map_err(|_| ParseError::InvalidPort(port_buf))?,
     );
     total = required_len;
 
@@ -204,13 +203,13 @@ mod tests {
             0x09, // length = 9
             b'l', b'o', b'c', b'a', b'l', b'h', b'o', b's', b't',
         ];
-        assert_eq!(read_mc_string(&buf), Ok(("localhost".to_string(), 10)));
+        assert_eq!(read_mc_string(&buf), Ok(("localhost", 10)));
     }
 
     #[test]
     fn string_stops_before_trailing_bytes() {
         let buf = [0x02, b'h', b'i', 0xAA, 0xBB];
-        assert_eq!(read_mc_string(&buf), Ok(("hi".to_string(), 3)));
+        assert_eq!(read_mc_string(&buf), Ok(("hi", 3)));
     }
 
     #[test]
@@ -258,7 +257,7 @@ mod tests {
             parse_handshake(&buf),
             Ok(Handshake {
                 protocol_version: 769,
-                server_address: "localhost".to_string(),
+                server_address: "localhost",
                 server_port: 25565,
                 next_state: NextState::Login,
             })
@@ -301,7 +300,7 @@ mod tests {
             parse_handshake(&buf),
             Ok(Handshake {
                 protocol_version: 769,
-                server_address: "play.example.com".to_string(),
+                server_address: "play.example.com",
                 server_port: 25565,
                 next_state: NextState::Status,
             })

@@ -1,3 +1,5 @@
+use crate::{checked_slice, try_slice_into};
+
 pub const ETHERTYPE_IPV4: u16 = 0x0800;
 
 /// The one IP protocol number this crate looks for (UDP is 17, ICMP is 1,
@@ -32,11 +34,11 @@ pub struct TcpFlags {
     pub psh: bool,
 }
 
-const FIN_BIT: u8 = 0b00000001;
-const SYN_BIT: u8 = 0b00000010;
-const RST_BIT: u8 = 0b00000100;
-const PSH_BIT: u8 = 0b00001000;
-const ACK_BIT: u8 = 0b00010000;
+const FIN_BIT: u8 = 0b0000_0001;
+const SYN_BIT: u8 = 0b0000_0010;
+const RST_BIT: u8 = 0b0000_0100;
+const PSH_BIT: u8 = 0b0000_1000;
+const ACK_BIT: u8 = 0b0001_0000;
 
 impl From<u8> for TcpFlags {
     fn from(flag: u8) -> Self {
@@ -65,15 +67,21 @@ pub enum NetError {
     UnsupportedEthertype(u16),
     UnsupportedIpVersion(u8),
     UnsupportedIpProtocol(u8),
+    Malformed,
 }
 
 
+/// Parses the fixed 14-byte Ethernet header and hands back everything after
+/// it as `payload`.
+///
+/// # Errors
+/// Returns [`NetError::TooShort`] if `frame` is under 14 bytes.
 pub fn parse_ethernet(frame: &[u8]) -> Result<EthernetFrame<'_>, NetError> {
     if frame.len() < 14 {
         return Err(NetError::TooShort { needed: 14, got: frame.len() });
     }
 
-    let ethertype = u16::from_be_bytes(frame[12..14].try_into().unwrap());
+    let ethertype = u16::from_be_bytes(try_slice_into!(frame[12..14], NetError::Malformed));
 
     Ok(EthernetFrame {
         ethertype,
@@ -82,6 +90,16 @@ pub fn parse_ethernet(frame: &[u8]) -> Result<EthernetFrame<'_>, NetError> {
 }
 
 
+/// Parses the variable-length IPv4 header (header length computed from the
+/// IHL nibble) and trims `payload` to the header's own Total Length field.
+///
+/// # Errors
+/// Returns [`NetError::TooShort`] if `packet` is under 20 bytes, if the
+/// IHL-derived header length is longer than `packet` itself, or if the
+/// header's Total Length field is smaller than the header or larger than
+/// `packet`'s actual length. Returns [`NetError::UnsupportedIpVersion`] if
+/// the version nibble isn't `4`, or [`NetError::UnsupportedIpProtocol`] if
+/// the protocol byte isn't [`IP_PROTOCOL_TCP`].
 pub fn parse_ipv4(packet: &[u8]) -> Result<Ipv4Packet<'_>, NetError> {
     if packet.is_empty() || packet.len() < 20 {
         return Err(NetError::TooShort { needed: 20, got: packet.len() });
@@ -102,13 +120,16 @@ pub fn parse_ipv4(packet: &[u8]) -> Result<Ipv4Packet<'_>, NetError> {
         return Err(NetError::UnsupportedIpProtocol(protocol));
     }
 
-    let total_len = u16::from_be_bytes(packet[2..4].try_into().unwrap()) as usize;
+    let total_len = u16::from_be_bytes(
+        try_slice_into!(packet[2..4], NetError::Malformed)
+    ) as usize;
     if packet.len() < total_len || total_len < header_len {
         return Err(NetError::TooShort { needed: total_len, got: packet.len() });
     }
 
-    let source: [u8; 4] = packet[12..16].try_into().unwrap();
-    let destination: [u8; 4] = packet[16..20].try_into().unwrap();
+    let source: [u8; 4] = try_slice_into!(packet[12..16], NetError::Malformed);
+
+    let destination: [u8; 4] = try_slice_into!(packet[16..20], NetError::Malformed);
 
     let header = Ipv4Header {
         protocol,
@@ -124,6 +145,13 @@ pub fn parse_ipv4(packet: &[u8]) -> Result<Ipv4Packet<'_>, NetError> {
     )
 }
 
+/// Parses the variable-length TCP header (header length computed from the
+/// data-offset nibble) and hands back everything after it as `payload`.
+///
+/// # Errors
+/// Returns [`NetError::TooShort`] if `segment` is under 20 bytes, or if the
+/// data-offset-derived header length is either longer than `segment` itself
+/// or shorter than the real 20-byte minimum.
 pub fn parse_tcp(segment: &[u8]) -> Result<TcpSegment<'_>, NetError> {
     if segment.len() < 20 {
         return Err(NetError::TooShort { needed: 20, got: segment.len() });
@@ -134,8 +162,12 @@ pub fn parse_tcp(segment: &[u8]) -> Result<TcpSegment<'_>, NetError> {
         return Err(NetError::TooShort { needed: header_len.max(20), got: segment.len() });
     }
 
-    let source_port = u16::from_be_bytes(segment[..2].try_into().unwrap());
-    let destination_port = u16::from_be_bytes(segment[2..4].try_into().unwrap());
+    let source_port = u16::from_be_bytes(
+        try_slice_into!(segment[..2], NetError::Malformed)
+    );
+    let destination_port = u16::from_be_bytes(
+        try_slice_into!(segment[2..4], NetError::Malformed)
+    );
 
     Ok(
         TcpSegment {

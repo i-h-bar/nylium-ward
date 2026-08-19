@@ -1,0 +1,20 @@
+[package]
+name = "mc-sniffer-ebpf"
+version = "0.1.0"
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+mc-sniffer-common = { path = "../mc-sniffer-common" }
+
+aya-ebpf = { workspace = true }
+aya-log-ebpf = { workspace = true }
+
+[build-dependencies]
+which = { workspace = true }
+
+[[bin]]
+name = "mc-sniffer"
+path = "src/main.rs"
