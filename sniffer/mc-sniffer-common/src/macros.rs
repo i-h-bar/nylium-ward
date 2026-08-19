@@ -1,9 +1,7 @@
 #[macro_export]
 macro_rules! checked_slice {
     ($buf:ident[$range:expr], $error:expr) => {
-        $buf
-        .get($range)
-        .ok_or($error)?
+        $buf.get($range).ok_or($error)?
     };
 }
 
@@ -11,9 +9,9 @@ macro_rules! checked_slice {
 macro_rules! try_slice_into {
     ($buf:ident[$range:expr], $error:expr) => {
         checked_slice!($buf[$range], $error)
-        .try_into()
-        .map_err(|_| $error)?
-    }
+            .try_into()
+            .map_err(|_| $error)?
+    };
 }
 #[cfg(test)]
 mod scratch_verify {

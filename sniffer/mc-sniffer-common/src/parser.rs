@@ -1,5 +1,5 @@
-use core::str;
 use crate::checked_slice;
+use core::str;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Handshake<'a> {
@@ -62,7 +62,11 @@ fn read_mc_string(buf: &[u8]) -> Result<(&str, usize), ParseError<'_>> {
     let total = len + consumed;
 
     Ok((
-        str::from_utf8(checked_slice!(buf[consumed..total], ParseError::UnexpectedEof)).map_err(|_| ParseError::InvalidUtf8)?,
+        str::from_utf8(checked_slice!(
+            buf[consumed..total],
+            ParseError::UnexpectedEof
+        ))
+        .map_err(|_| ParseError::InvalidUtf8)?,
         total,
     ))
 }
@@ -89,17 +93,15 @@ pub fn parse_handshake(buf: &[u8]) -> Result<Handshake<'_>, ParseError<'_>> {
         return Err(ParseError::WrongPacketId(pid));
     }
 
-    let (protov, consumed) = read_varint(&buf[total..])?;
+    let (protov, consumed) = read_varint(checked_slice!(buf[total..], ParseError::UnexpectedEof))?;
     total += consumed;
 
-    let (server_addr, consumed) = read_mc_string(&buf[total..])?;
+    let (server_addr, consumed) =
+        read_mc_string(checked_slice!(buf[total..], ParseError::UnexpectedEof))?;
     total += consumed;
 
     let required_len = total + 2;
-    if buf.len() < required_len {
-        return Err(ParseError::UnexpectedEof);
-    }
-    let port_buf = &buf[total..required_len];
+    let port_buf = checked_slice!(buf[total..required_len], ParseError::UnexpectedEof);
     let server_port: u16 = u16::from_be_bytes(
         port_buf
             .try_into()
@@ -107,7 +109,8 @@ pub fn parse_handshake(buf: &[u8]) -> Result<Handshake<'_>, ParseError<'_>> {
     );
     total = required_len;
 
-    let (next_state_num, consumed) = read_varint(&buf[total..])?;
+    let (next_state_num, consumed) =
+        read_varint(checked_slice!(buf[total..], ParseError::UnexpectedEof))?;
     total += consumed;
     if buf.len() > total {
         return Err(ParseError::TrailingBytes(buf.len() - total));

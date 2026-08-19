@@ -34,30 +34,35 @@ const RST_BIT: u8 = 0b0000_0100;
 const PSH_BIT: u8 = 0b0000_1000;
 const ACK_BIT: u8 = 0b0001_0000;
 
-impl From<u8> for TcpFlags {
-    fn from(flag: u8) -> Self {
-        Self(flag)
+impl From<&u8> for TcpFlags {
+    fn from(flag: &u8) -> Self {
+        Self(*flag)
     }
 }
 
 impl TcpFlags {
-    pub fn is_fin(&self) -> bool {
+    #[must_use]
+    pub const fn is_fin(&self) -> bool {
         (self.0 & FIN_BIT) != 0
     }
-    pub fn is_syn(&self) -> bool {
+    #[must_use]
+    pub const fn is_syn(&self) -> bool {
         (self.0 & SYN_BIT) != 0
     }
-    pub fn is_rst(&self) -> bool {
+    #[must_use]
+    pub const fn is_rst(&self) -> bool {
         (self.0 & RST_BIT) != 0
     }
-    pub fn is_psh(&self) -> bool {
+    #[must_use]
+    pub const fn is_psh(&self) -> bool {
         (self.0 & PSH_BIT) != 0
     }
-    pub fn is_ack(&self) -> bool {
+
+    #[must_use]
+    pub const fn is_ack(&self) -> bool {
         (self.0 & ACK_BIT) != 0
     }
 }
-
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TcpSegment<'a> {
@@ -69,13 +74,12 @@ pub struct TcpSegment<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NetError {
-    TooShort { needed: usize, got: usize },
+    TooShort,
     UnsupportedEthertype(u16),
     UnsupportedIpVersion(u8),
     UnsupportedIpProtocol(u8),
     Malformed,
 }
-
 
 /// Parses the fixed 14-byte Ethernet header and hands back everything after
 /// it as `payload`.
@@ -83,18 +87,13 @@ pub enum NetError {
 /// # Errors
 /// Returns [`NetError::TooShort`] if `frame` is under 14 bytes.
 pub fn parse_ethernet(frame: &[u8]) -> Result<EthernetFrame<'_>, NetError> {
-    if frame.len() < 14 {
-        return Err(NetError::TooShort { needed: 14, got: frame.len() });
-    }
-
-    let ethertype = u16::from_be_bytes(try_slice_into!(frame[12..14], NetError::Malformed));
+    let ethertype = u16::from_be_bytes(try_slice_into!(frame[12..14], NetError::TooShort));
 
     Ok(EthernetFrame {
         ethertype,
-        payload: &frame[14..],
+        payload: checked_slice!(frame[14..], NetError::TooShort),
     })
 }
-
 
 /// Parses the variable-length IPv4 header (header length computed from the
 /// IHL nibble) and trims `payload` to the header's own Total Length field.
@@ -108,34 +107,24 @@ pub fn parse_ethernet(frame: &[u8]) -> Result<EthernetFrame<'_>, NetError> {
 /// the protocol byte isn't [`IP_PROTOCOL_TCP`].
 pub fn parse_ipv4(packet: &[u8]) -> Result<Ipv4Packet<'_>, NetError> {
     if packet.is_empty() || packet.len() < 20 {
-        return Err(NetError::TooShort { needed: 20, got: packet.len() });
+        return Err(NetError::TooShort);
     }
 
-    let first_byte = packet[0];
+    let first_byte = checked_slice!(packet[0], NetError::TooShort);
     let ip_version = first_byte >> 4;
     if ip_version != 4 {
         return Err(NetError::UnsupportedIpVersion(ip_version));
     }
 
     let header_len = ((first_byte & 0x0F) * 4) as usize;
-    if packet.len() < header_len {
-        return Err(NetError::TooShort { needed: header_len, got: packet.len() });
-    }
-    let protocol = packet[9];
+    let &protocol = checked_slice!(packet[9], NetError::TooShort);
     if protocol != IP_PROTOCOL_TCP {
         return Err(NetError::UnsupportedIpProtocol(protocol));
     }
 
-    let total_len = u16::from_be_bytes(
-        try_slice_into!(packet[2..4], NetError::Malformed)
-    ) as usize;
-    if packet.len() < total_len || total_len < header_len {
-        return Err(NetError::TooShort { needed: total_len, got: packet.len() });
-    }
-
-    let source: [u8; 4] = try_slice_into!(packet[12..16], NetError::Malformed);
-
-    let destination: [u8; 4] = try_slice_into!(packet[16..20], NetError::Malformed);
+    let total_len = u16::from_be_bytes(try_slice_into!(packet[2..4], NetError::TooShort)) as usize;
+    let source: [u8; 4] = try_slice_into!(packet[12..16], NetError::TooShort);
+    let destination: [u8; 4] = try_slice_into!(packet[16..20], NetError::TooShort);
 
     let header = Ipv4Header {
         protocol,
@@ -143,12 +132,10 @@ pub fn parse_ipv4(packet: &[u8]) -> Result<Ipv4Packet<'_>, NetError> {
         destination,
     };
 
-    Ok(
-        Ipv4Packet {
-            header,
-            payload: &packet[header_len..total_len],
-        }
-    )
+    Ok(Ipv4Packet {
+        header,
+        payload: checked_slice!(packet[header_len..total_len], NetError::TooShort),
+    })
 }
 
 /// Parses the variable-length TCP header (header length computed from the
@@ -159,30 +146,22 @@ pub fn parse_ipv4(packet: &[u8]) -> Result<Ipv4Packet<'_>, NetError> {
 /// data-offset-derived header length is either longer than `segment` itself
 /// or shorter than the real 20-byte minimum.
 pub fn parse_tcp(segment: &[u8]) -> Result<TcpSegment<'_>, NetError> {
-    if segment.len() < 20 {
-        return Err(NetError::TooShort { needed: 20, got: segment.len() });
-    }
-    let header_len = ((segment[12] >> 4) * 4) as usize;
+    let header_byte = checked_slice!(segment[12], NetError::TooShort);
+    let header_len = ((header_byte >> 4) * 4) as usize;
 
     if segment.len() < header_len || header_len < 20 {
-        return Err(NetError::TooShort { needed: header_len.max(20), got: segment.len() });
+        return Err(NetError::TooShort);
     }
 
-    let source_port = u16::from_be_bytes(
-        try_slice_into!(segment[..2], NetError::Malformed)
-    );
-    let destination_port = u16::from_be_bytes(
-        try_slice_into!(segment[2..4], NetError::Malformed)
-    );
+    let source_port = u16::from_be_bytes(try_slice_into!(segment[..2], NetError::TooShort));
+    let destination_port = u16::from_be_bytes(try_slice_into!(segment[2..4], NetError::TooShort));
 
-    Ok(
-        TcpSegment {
-            source_port,
-            destination_port,
-            flags: segment[13].into(),
-            payload: &segment[header_len..],
-        }
-    )
+    Ok(TcpSegment {
+        source_port,
+        destination_port,
+        flags: checked_slice!(segment[13], NetError::TooShort).into(),
+        payload: checked_slice!(segment[header_len..], NetError::TooShort),
+    })
 }
 
 #[cfg(test)]
@@ -247,10 +226,7 @@ mod tests {
         #[test]
         fn too_short() {
             let buf = [0u8; 13]; // one byte short of the fixed 14-byte header
-            assert_eq!(
-                parse_ethernet(&buf),
-                Err(NetError::TooShort { needed: 14, got: 13 })
-            );
+            assert_eq!(parse_ethernet(&buf), Err(NetError::TooShort));
         }
 
         #[test]
@@ -337,7 +313,7 @@ mod tests {
             let eth = parse_ethernet(&frame).unwrap();
             assert_eq!(
                 super::super::parse_ipv4(eth.payload),
-                Err(NetError::TooShort { needed: 200, got: eth.payload.len() })
+                Err(NetError::TooShort)
             );
         }
 
@@ -352,7 +328,7 @@ mod tests {
             let eth = parse_ethernet(&frame).unwrap();
             assert!(matches!(
                 super::super::parse_ipv4(eth.payload),
-                Err(NetError::TooShort { .. })
+                Err(NetError::TooShort)
             ));
         }
 
@@ -363,10 +339,7 @@ mod tests {
             // floor, reading the fixed-offset protocol/source/destination
             // fields below would panic instead of returning an error.
             let buf = [0x40u8; 15];
-            assert_eq!(
-                super::super::parse_ipv4(&buf),
-                Err(NetError::TooShort { needed: 20, got: 15 })
-            );
+            assert_eq!(super::super::parse_ipv4(&buf), Err(NetError::TooShort));
         }
     }
 
@@ -416,10 +389,7 @@ mod tests {
         #[test]
         fn too_short() {
             let buf = [0u8; 19]; // one byte short of the fixed 20-byte minimum
-            assert_eq!(
-                super::super::parse_tcp(&buf),
-                Err(NetError::TooShort { needed: 20, got: 19 })
-            );
+            assert_eq!(super::super::parse_tcp(&buf), Err(NetError::TooShort));
         }
 
         #[test]
@@ -437,10 +407,7 @@ mod tests {
                 0x00, 0x02,                          // data offset 0, flags SYN
                 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, // window, checksum, urgent
             ];
-            assert_eq!(
-                super::super::parse_tcp(&segment),
-                Err(NetError::TooShort { needed: 20, got: 20 })
-            );
+            assert_eq!(super::super::parse_tcp(&segment), Err(NetError::TooShort));
         }
     }
 }

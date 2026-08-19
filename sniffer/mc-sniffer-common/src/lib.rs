@@ -1,9 +1,12 @@
 #![cfg_attr(not(test), no_std)]
-#![warn(
-    clippy::indexing_slicing,
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic
+#![cfg_attr(
+    not(test),
+    warn(
+        clippy::indexing_slicing,
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic
+    )
 )]
 
 // Shared types between mc-sniffer (userspace) and mc-sniffer-ebpf (kernel)
@@ -12,6 +15,6 @@
 // PerfEventArray or RingBuf map. Empty for now; the toolchain scaffold
 // doesn't need it yet.
 
+pub mod macros;
 pub mod net;
 pub mod parser;
-pub mod macros;
