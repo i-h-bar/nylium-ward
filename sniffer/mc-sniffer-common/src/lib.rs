@@ -1,4 +1,10 @@
 #![cfg_attr(not(test), no_std)]
+#![warn(
+    clippy::indexing_slicing,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic
+)]
 
 // Shared types between mc-sniffer (userspace) and mc-sniffer-ebpf (kernel)
 // go here once the XDP program needs to report something back to userspace

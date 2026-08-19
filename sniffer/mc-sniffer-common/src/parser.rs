@@ -64,7 +64,7 @@ fn read_mc_string(buf: &[u8]) -> Result<(&str, usize), ParseError<'_>> {
     }
 
     Ok((
-        str::from_utf8(buf[consumed..=len].into()).map_err(|_| ParseError::InvalidUtf8)?,
+        str::from_utf8(buf[consumed..total].into()).map_err(|_| ParseError::InvalidUtf8)?,
         total,
     ))
 }
@@ -234,6 +234,29 @@ mod tests {
         // lines later.
         let buf = [0xFF, 0xFF, 0xFF, 0xFF, 0x0F];
         assert_eq!(read_mc_string(&buf), Err(ParseError::NegativeLength(-1)));
+    }
+
+    #[test]
+    fn string_needing_two_byte_length_varint_is_not_truncated() {
+        // KNOWN BUG, currently unfixed: read_mc_string slices the string
+        // body as `buf[consumed..=len]` instead of `buf[consumed..total]`
+        // (`total = len + consumed` is already computed one line above —
+        // the fix is just using it). `consumed..=len` only happens to equal
+        // `consumed..total` when `consumed == 1`, i.e. a length VarInt that
+        // fits in a single byte (length <= 127) — true for every other
+        // string test in this file, which is exactly why this slipped
+        // through. A 128-byte address needs a 2-byte length VarInt
+        // (consumed = 2), and the bug then silently drops the last byte of
+        // the returned string instead of erroring or panicking.
+        //
+        // This test asserts the CORRECT behavior and will fail until that
+        // range is fixed.
+        let mut buf = vec![0x80, 0x01]; // VarInt(128): 0x80|0x00, then 0x01
+        buf.extend(core::iter::repeat_n(b'a', 127));
+        buf.push(b'Z'); // distinct final byte, so truncation is easy to spot
+
+        let expected = "a".repeat(127) + "Z";
+        assert_eq!(read_mc_string(&buf), Ok((expected.as_str(), 130)));
     }
 
     // ---- parse_handshake ----------------------------------------------------
