@@ -26,13 +26,7 @@ pub struct Ipv4Packet<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct TcpFlags {
-    pub syn: bool,
-    pub ack: bool,
-    pub fin: bool,
-    pub rst: bool,
-    pub psh: bool,
-}
+pub struct TcpFlags(u8);
 
 const FIN_BIT: u8 = 0b0000_0001;
 const SYN_BIT: u8 = 0b0000_0010;
@@ -42,13 +36,25 @@ const ACK_BIT: u8 = 0b0001_0000;
 
 impl From<u8> for TcpFlags {
     fn from(flag: u8) -> Self {
-        Self {
-            syn: (flag & SYN_BIT) != 0,
-            ack: (flag & ACK_BIT) != 0,
-            fin: (flag & FIN_BIT) != 0,
-            rst: (flag & RST_BIT) != 0,
-            psh: (flag & PSH_BIT) != 0,
-        }
+        Self(flag)
+    }
+}
+
+impl TcpFlags {
+    pub fn is_fin(&self) -> bool {
+        (self.0 & FIN_BIT) != 0
+    }
+    pub fn is_syn(&self) -> bool {
+        (self.0 & SYN_BIT) != 0
+    }
+    pub fn is_rst(&self) -> bool {
+        (self.0 & RST_BIT) != 0
+    }
+    pub fn is_psh(&self) -> bool {
+        (self.0 & PSH_BIT) != 0
+    }
+    pub fn is_ack(&self) -> bool {
+        (self.0 & ACK_BIT) != 0
     }
 }
 
@@ -374,10 +380,12 @@ mod tests {
             let tcp = super::super::parse_tcp(ip.payload).unwrap();
             assert_eq!(tcp.source_port, 54321);
             assert_eq!(tcp.destination_port, 25565);
-            assert_eq!(
-                tcp.flags,
-                TcpFlags { syn: false, ack: true, fin: false, rst: false, psh: true }
-            );
+            // Flags byte 0x18 = 0b0001_1000 = PSH (0x08) + ACK (0x10).
+            assert!(!tcp.flags.is_syn());
+            assert!(tcp.flags.is_ack());
+            assert!(!tcp.flags.is_fin());
+            assert!(!tcp.flags.is_rst());
+            assert!(tcp.flags.is_psh());
             // This is the same 17-byte full-wire Minecraft packet used in
             // parser.rs's handshake_localhost_login test.
             assert_eq!(tcp.payload.len(), 17);
@@ -397,10 +405,11 @@ mod tests {
                 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, // window, checksum, urgent
             ];
             let tcp = super::super::parse_tcp(&syn_segment).unwrap();
-            assert_eq!(
-                tcp.flags,
-                TcpFlags { syn: true, ack: false, fin: false, rst: false, psh: false }
-            );
+            assert!(tcp.flags.is_syn());
+            assert!(!tcp.flags.is_ack());
+            assert!(!tcp.flags.is_fin());
+            assert!(!tcp.flags.is_rst());
+            assert!(!tcp.flags.is_psh());
             assert!(tcp.payload.is_empty());
         }
 
