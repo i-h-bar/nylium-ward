@@ -1,2 +1,11 @@
-[target."cfg(all())"]
-runner = "sudo -E"
+# No `runner` here on purpose. Cargo's target.<cfg>.runner applies uniformly
+# to `cargo run`, `cargo test`, and `cargo bench` for a target triple — there
+# is no way to scope a runner to just one of those (confirmed against
+# Cargo's own docs). None of the unit tests in this workspace need root —
+# they exercise pure parsing logic, no packet capture or eBPF attach — so we
+# leave this unset and `cargo test` just runs directly.
+#
+# Attaching the real XDP program (`cargo run`) still needs root, since that
+# genuinely requires CAP_BPF/CAP_NET_ADMIN. Run it explicitly:
+#
+#   sudo -E cargo run --release -- --iface <interface-name>

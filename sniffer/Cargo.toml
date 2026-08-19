@@ -4,7 +4,7 @@ members = ["mc-sniffer", "mc-sniffer-common", "mc-sniffer-ebpf"]
 default-members = ["mc-sniffer", "mc-sniffer-common"]
 
 [workspace.package]
-license = "MIT OR Apache-2.0"
+license = "AGPL-3.0-only"
 edition = "2024"
 
 [workspace.lints.clippy]

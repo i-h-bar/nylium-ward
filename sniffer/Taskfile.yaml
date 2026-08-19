@@ -1,0 +1,20 @@
+version: '3'
+
+# Scoped to this directory on purpose — sniffer development/run commands stay
+# separate from the parent repo's Taskfile.yaml (server lifecycle, Cilium,
+# playit). Run these from sniffer/, not the repo root.
+
+vars:
+  IFACE: '{{.IFACE | default "eth0"}}'
+
+tasks:
+  default:
+    cmds:
+      - task --list-all
+    silent: true
+
+  run:
+    desc: 'Build and attach the real XDP program (needs root — see .cargo/config.toml). Usage: task run [IFACE=eth0]'
+    interactive: true
+    cmds:
+      - sudo -E cargo run --release -- --iface {{.IFACE}}

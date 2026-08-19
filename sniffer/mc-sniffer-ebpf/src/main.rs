@@ -1,9 +1,5 @@
 #![no_std]
 #![no_main]
-// A panic here isn't a controlled crash like it is in userspace — the
-// panic_handler below is just `loop {}`, which hangs the CPU core running
-// this program. These lints catch the constructs (slice indexing, .unwrap(),
-// .expect(), explicit panic!) that can trigger that before they compile in.
 #![warn(
     clippy::indexing_slicing,
     clippy::unwrap_used,
