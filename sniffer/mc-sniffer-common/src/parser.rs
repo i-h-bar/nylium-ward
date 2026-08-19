@@ -1,4 +1,5 @@
 use core::str;
+use crate::checked_slice;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Handshake<'a> {
@@ -59,12 +60,9 @@ fn read_mc_string(buf: &[u8]) -> Result<(&str, usize), ParseError<'_>> {
     let (len, consumed) = read_varint(buf)?;
     let len = usize::try_from(len).map_err(|_| ParseError::NegativeLength(len))?;
     let total = len + consumed;
-    if buf.len() < total {
-        return Err(ParseError::UnexpectedEof);
-    }
 
     Ok((
-        str::from_utf8(buf[consumed..total].into()).map_err(|_| ParseError::InvalidUtf8)?,
+        str::from_utf8(checked_slice!(buf[consumed..total], ParseError::UnexpectedEof)).map_err(|_| ParseError::InvalidUtf8)?,
         total,
     ))
 }
