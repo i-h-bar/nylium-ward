@@ -13,15 +13,7 @@ use mc_sniffer_common::ebpf::networking::ethernet;
 use mc_sniffer_common::ebpf::networking::ipv4::Ipv4Packet;
 use mc_sniffer_common::ebpf::utils::format_action;
 
-/// Toolchain scaffold only — always lets traffic through. The next step
-/// (once you've reached networking programs in Liz Rice's book) is to
-/// actually parse the packet here: the same byte-offset logic already
-/// written and tested in `net::parse_ethernet`/`parse_ipv4`/`parse_tcp`
-/// (userspace crate), rewritten for the verifier — bounds-checked reads via
-/// `ctx.data()`/`ctx.data_end()` and pointer arithmetic instead of slice
-/// indexing, no heap, no `Result`-returning helpers with arbitrary control
-/// flow — and return `xdp_action::XDP_DROP` for malformed Minecraft-port
-/// traffic instead of `XDP_PASS`.
+
 #[xdp]
 pub fn mc_sniffer(ctx: XdpContext) -> u32 {
     try_mc_sniffer(ctx).unwrap_or(xdp_action::XDP_ABORTED)
