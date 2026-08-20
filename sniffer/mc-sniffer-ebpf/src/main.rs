@@ -29,7 +29,7 @@ pub fn mc_sniffer(ctx: XdpContext) -> u32 {
 
 fn try_mc_sniffer(ctx: XdpContext) -> Result<u32, ()> {
     info!(&ctx, "Packet received");
-    if let Err(action) =  ethernet::check_header(&ctx) {
+    if let Err(action) = ethernet::check_header(&ctx) {
         info!(&ctx, "Ethernet check. Action: {}", format_action(&action));
         return Ok(action);
     }
@@ -38,13 +38,16 @@ fn try_mc_sniffer(ctx: XdpContext) -> Result<u32, ()> {
             let addr = ipv4.addr();
             let port = ipv4.port();
             let len = ipv4.len();
-            info!(&ctx, "Parsed IPv4 packet {:i}:{} - length={}", addr, port, len);
+            info!(
+                &ctx,
+                "Parsed IPv4 packet {:i}:{} - length={}", addr, port, len
+            );
             ipv4
-        },
+        }
         Err(action) => {
             info!(&ctx, "Ipv4 check. Action: {}", format_action(&action));
-            return Ok(action)
-        },
+            return Ok(action);
+        }
     };
 
     Ok(xdp_action::XDP_PASS)

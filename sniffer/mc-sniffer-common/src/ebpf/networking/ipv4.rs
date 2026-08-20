@@ -1,24 +1,31 @@
+use crate::{extract, index};
 use aya_ebpf::bindings::xdp_action;
 use aya_ebpf::programs::XdpContext;
 use network_types::eth::EthHdr;
 use network_types::ip::{IpError, IpProto, Ipv4Hdr};
 use network_types::tcp::TcpHdr;
-use crate::ebpf::utils::ptr_at;
-use crate::{extract, index};
 
 pub struct Ipv4Packet(u32, u16, usize);
 
 impl Ipv4Packet {
-    pub fn addr(&self) -> u32 {
+    #[must_use]
+    pub const fn addr(&self) -> u32 {
         self.0
     }
 
-    pub fn port(&self) -> u16 {
+    #[must_use]
+    pub const fn port(&self) -> u16 {
         self.1
     }
 
-    pub fn len(&self) -> usize {
+    #[must_use]
+    pub const fn len(&self) -> usize {
         self.2
+    }
+
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
@@ -32,7 +39,8 @@ impl TryFrom<&XdpContext> for Ipv4Packet {
         }
 
         let source_addr = u32::from_be_bytes(extract!(ipv4hdr).src_addr);
-        let proto = extract!(ipv4hdr).proto()
+        let proto = extract!(ipv4hdr)
+            .proto()
             .map_err(|IpError::InvalidProto(_proto)| xdp_action::XDP_DROP)?;
 
         let source_port = match proto {
@@ -40,11 +48,10 @@ impl TryFrom<&XdpContext> for Ipv4Packet {
                 let tcphdr: *const TcpHdr = index!(ctx[EthHdr::LEN + Ipv4Hdr::LEN]);
                 u16::from_be_bytes(extract!(tcphdr).source)
             }
-            IpProto::Udp => return Err(xdp_action::XDP_DROP), // Udp not allowed in this context
-            _ => return Err(xdp_action::XDP_DROP),
+            _ => return Err(xdp_action::XDP_DROP), // Udp not allowed in this context
         };
 
-        let total_len = u16::from_be_bytes( extract!(ipv4hdr).tot_len) as usize;
+        let total_len = u16::from_be_bytes(extract!(ipv4hdr).tot_len) as usize;
         if total_len < Ipv4Hdr::LEN {
             return Err(xdp_action::XDP_DROP);
         }
@@ -118,8 +125,7 @@ mod tests {
     #[test]
     fn succeeds_and_reads_addr_port_len() {
         let mut pkt = FakePacket::new(&VALID_FRAME);
-        let ipv4 = Ipv4Packet::try_from(&pkt.ctx())
-            .expect("should parse a valid IPv4+TCP packet");
+        let ipv4 = Ipv4Packet::try_from(&pkt.ctx()).expect("should parse a valid IPv4+TCP packet");
         assert_eq!(ipv4.addr(), u32::from_be_bytes([10, 0, 1, 4]));
         assert_eq!(ipv4.port(), 54321); // TCP source port
         assert_eq!(ipv4.len(), 57); // IPv4 Total Length

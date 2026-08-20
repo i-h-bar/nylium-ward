@@ -15,6 +15,6 @@
 // PerfEventArray or RingBuf map. Empty for now; the toolchain scaffold
 // doesn't need it yet.
 
-pub mod macros;
 pub mod ebpf;
+pub mod macros;
 pub mod networking;
