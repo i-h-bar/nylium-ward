@@ -14,7 +14,7 @@ signal that can, which is what the stub echo listener (docker/echo_server.py,
 backgrounded by docker/entrypoint.sh inside the sniffer container) is for.
 
 - assert_probe_observed / the "*_observed" tests: just "did the XDP hook see
-  this frame at all" (via the "received a packet" log line). Cheap, and
+  this frame at all" (via the "Packet received" log line). Cheap, and
   true today since mc-sniffer-ebpf is still the placeholder that passes and
   logs everything unconditionally.
 - probe_and_capture_echo / the "*_delivered" / "*_is_dropped" tests: the
@@ -45,7 +45,7 @@ def sniffer_logs() -> str:
 
 
 def packet_log_count() -> int:
-    return sniffer_logs().count("received a packet")
+    return sniffer_logs().count("Packet received")
 
 
 @pytest.fixture(scope="session")

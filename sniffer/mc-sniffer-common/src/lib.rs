@@ -16,5 +16,5 @@
 // doesn't need it yet.
 
 pub mod macros;
-pub mod net;
-pub mod parser;
+pub mod ebpf;
+pub mod networking;

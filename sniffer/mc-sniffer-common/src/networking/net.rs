@@ -78,7 +78,6 @@ pub enum NetError {
     UnsupportedEthertype(u16),
     UnsupportedIpVersion(u8),
     UnsupportedIpProtocol(u8),
-    Malformed,
 }
 
 /// Parses the fixed 14-byte Ethernet header and hands back everything after

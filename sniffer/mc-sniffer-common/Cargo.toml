@@ -14,6 +14,13 @@ user = ["aya"]
 
 [dependencies]
 aya = { workspace = true, optional = true }
+aya-ebpf = "0.2.1"
+network-types = "0.2.0"
+
+[dev-dependencies]
+# Only for the ebpf::* test helper that builds a real XdpContext around
+# mmap'd memory (see ebpf/test_support.rs) — needs raw mmap/munmap.
+libc = { workspace = true, default-features = true }
 
 [lib]
 path = "src/lib.rs"
