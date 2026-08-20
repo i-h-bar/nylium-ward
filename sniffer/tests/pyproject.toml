@@ -1,0 +1,11 @@
+[project]
+name = "mc-sniffer-integration-tests"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["pytest>=8"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+addopts = "-v"

@@ -18,3 +18,9 @@ tasks:
     interactive: true
     cmds:
       - sudo -E cargo run --release -- --iface {{.IFACE}}
+
+  test:docker:
+    desc: 'Integration tests: build + run the Docker test harness, probe it, tear down (needs Docker; no sudo, no host networking touched)'
+    dir: tests
+    cmds:
+      - uv run pytest

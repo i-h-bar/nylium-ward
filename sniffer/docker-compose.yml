@@ -1,0 +1,41 @@
+# Isolated test harness for the real XDP program — see Dockerfile. Two
+# containers on a private bridge network that never touches the host:
+#
+#   sniffer  -- runs mc-sniffer, XDP attached to *its own* eth0 (a veth,
+#               unrelated to any real host interface)
+#   probe    -- alpine + netcat/python3, for hand-crafting and sending raw
+#               Minecraft-handshake-shaped bytes at the sniffer container
+#
+# `privileged: true` is what lets the sniffer container call bpf() at all
+# (Docker's default seccomp profile blocks it outright, capabilities alone
+# aren't enough) — it does NOT grant access to the host's real network.
+# That isolation comes from network_mode staying default/bridge here rather
+# than "host" — the two are unrelated Docker settings, and this file never
+# sets network_mode: host.
+#
+# Usage:
+#   docker compose up --build -d
+#   docker compose logs -f sniffer          # watch XDP hits (RUST_LOG=info)
+#   docker compose exec probe sh            # then use nc/python3 to probe
+#   docker compose down
+
+services:
+  sniffer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    privileged: true
+    environment:
+      - RUST_LOG=info
+    networks:
+      - mc-test
+
+  probe:
+    image: alpine:3.20
+    command: sh -c "apk add --no-cache netcat-openbsd python3 >/dev/null && sleep infinity"
+    networks:
+      - mc-test
+
+networks:
+  mc-test:
+    driver: bridge
