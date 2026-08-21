@@ -11,6 +11,7 @@ use aya_ebpf::{bindings::xdp_action, macros::xdp, programs::XdpContext};
 use aya_log_ebpf::info;
 use mc_sniffer_common::ebpf::networking::ethernet;
 use mc_sniffer_common::ebpf::networking::ipv4::Ipv4Packet;
+use mc_sniffer_common::ebpf::traits::ParseFrom;
 use mc_sniffer_common::ebpf::utils::format_action;
 
 
@@ -25,7 +26,7 @@ fn try_mc_sniffer(ctx: XdpContext) -> Result<u32, ()> {
         info!(&ctx, "Ethernet check. Action: {}", format_action(&action));
         return Ok(action);
     }
-    let ipv4: Ipv4Packet = match <&XdpContext as TryInto<Ipv4Packet>>::try_into(&ctx) {
+    let ipv4 = match Ipv4Packet::parse_from(&ctx) {
         Ok(ipv4) => {
             let addr = ipv4.addr();
             let port = ipv4.port();

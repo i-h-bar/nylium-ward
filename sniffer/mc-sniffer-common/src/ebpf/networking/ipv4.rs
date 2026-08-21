@@ -1,9 +1,8 @@
-use crate::{extract, index};
-use aya_ebpf::bindings::xdp_action;
-use aya_ebpf::programs::XdpContext;
+use crate::extract;
 use network_types::eth::EthHdr;
 use network_types::ip::{IpError, IpProto, Ipv4Hdr};
 use network_types::tcp::TcpHdr;
+use crate::ebpf::traits::{EbpfAction, EbpfContext, ParseFrom};
 
 pub struct Ipv4Packet(u32, u16, usize);
 
@@ -29,42 +28,38 @@ impl Ipv4Packet {
     }
 }
 
-impl TryFrom<&XdpContext> for Ipv4Packet {
-    type Error = u32;
+impl<C: EbpfContext> ParseFrom<C> for Ipv4Packet {
+    type Error = C::Action;
 
-    fn try_from(ctx: &XdpContext) -> Result<Self, Self::Error> {
-        let ipv4hdr: *const Ipv4Hdr = index!(ctx[EthHdr::LEN]);
+    fn parse_from(ctx: &C) -> Result<Self, Self::Error> {
+        let ipv4hdr: *const Ipv4Hdr = ctx.index(EthHdr::LEN)?;
         if extract!(ipv4hdr).version() != 4 {
-            return Err(xdp_action::XDP_DROP);
+            return Err(C::Action::drop());
         }
 
         let source_addr = u32::from_be_bytes(extract!(ipv4hdr).src_addr);
         let proto = extract!(ipv4hdr)
             .proto()
-            .map_err(|IpError::InvalidProto(_proto)| xdp_action::XDP_DROP)?;
+            .map_err(|IpError::InvalidProto(_proto)| C::Action::drop())?;
 
         let source_port = match proto {
             IpProto::Tcp => {
-                let tcphdr: *const TcpHdr = index!(ctx[EthHdr::LEN + Ipv4Hdr::LEN]);
+                let tcphdr: *const TcpHdr = ctx.index(EthHdr::LEN + Ipv4Hdr::LEN)?;
                 u16::from_be_bytes(extract!(tcphdr).source)
             }
-            _ => return Err(xdp_action::XDP_DROP), // Udp not allowed in this context
+            _ => return Err(C::Action::drop()), // Udp not allowed in this context
         };
 
         let total_len = u16::from_be_bytes(extract!(ipv4hdr).tot_len) as usize;
-        if total_len < Ipv4Hdr::LEN {
-            return Err(xdp_action::XDP_DROP);
+        if total_len < Ipv4Hdr::LEN || total_len > 1500 {
+            return Err(C::Action::drop());
         }
 
-        let start = ctx.data();
-        let end = ctx.data_end();
-
-        if total_len >= 1500 {
-            return Err(xdp_action::XDP_DROP);
-        }
+        let start = ctx.start();
+        let end = ctx.end();
 
         if start + EthHdr::LEN + total_len > end {
-            return Err(xdp_action::XDP_DROP);
+            return Err(C::Action::drop());
         }
 
         Ok(Self(source_addr, source_port, total_len))
@@ -74,6 +69,7 @@ impl TryFrom<&XdpContext> for Ipv4Packet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aya_ebpf::programs::XdpContext;
     use crate::ebpf::test_support::FakePacket;
 
     // Same Ethernet+IPv4+TCP bytes as net.rs's LOCALHOST_LOGIN_FRAME /
@@ -115,9 +111,9 @@ mod tests {
     // the whole `Result`, Ok side included, to be `Debug` for its panic
     // message) isn't usable here -- this sidesteps that without touching
     // the struct's derives.
-    fn assert_dropped(result: Result<Ipv4Packet, u32>) {
+    fn assert_dropped(result: Result<Ipv4Packet, <XdpContext as EbpfContext>::Action>) {
         match result {
-            Err(action) => assert_eq!(action, xdp_action::XDP_DROP),
+            Err(action) => assert_eq!(action, <XdpContext as EbpfContext>::Action::drop()),
             Ok(_) => panic!("expected the packet to be dropped, but it parsed successfully"),
         }
     }
@@ -125,7 +121,7 @@ mod tests {
     #[test]
     fn succeeds_and_reads_addr_port_len() {
         let mut pkt = FakePacket::new(&VALID_FRAME);
-        let ipv4 = Ipv4Packet::try_from(&pkt.ctx()).expect("should parse a valid IPv4+TCP packet");
+        let ipv4 = Ipv4Packet::parse_from(&pkt.ctx()).expect("should parse a valid IPv4+TCP packet");
         assert_eq!(ipv4.addr(), u32::from_be_bytes([10, 0, 1, 4]));
         assert_eq!(ipv4.port(), 54321); // TCP source port
         assert_eq!(ipv4.len(), 57); // IPv4 Total Length
@@ -141,7 +137,7 @@ mod tests {
         let mut frame = VALID_FRAME.to_vec();
         frame.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
         let mut pkt = FakePacket::new(&frame);
-        assert!(Ipv4Packet::try_from(&pkt.ctx()).is_ok());
+        assert!(Ipv4Packet::parse_from(&pkt.ctx()).is_ok());
     }
 
     #[test]
@@ -149,19 +145,19 @@ mod tests {
         let mut frame = VALID_FRAME;
         frame[14 + 9] = 17; // protocol field, offset 9 into the IP header; 17 = UDP
         let mut pkt = FakePacket::new(&frame);
-        assert_dropped(Ipv4Packet::try_from(&pkt.ctx()));
+        assert_dropped(Ipv4Packet::parse_from(&pkt.ctx()));
     }
 
     #[test]
     fn rejects_non_v4_version() {
-        // KNOWN GAP vs net.rs::parse_ipv4: Ipv4Packet::try_from doesn't
+        // KNOWN GAP vs net.rs::parse_ipv4: Ipv4Packet::parse_from doesn't
         // check the version nibble at all right now, so this documents the
         // intended behavior rather than something already implemented --
         // it's expected to fail until a version check is added.
         let mut frame = VALID_FRAME;
         frame[14] = 0x65; // version 6 (IHL nibble left as 5, doesn't matter)
         let mut pkt = FakePacket::new(&frame);
-        assert_dropped(Ipv4Packet::try_from(&pkt.ctx()));
+        assert_dropped(Ipv4Packet::parse_from(&pkt.ctx()));
     }
 
     #[test]
@@ -173,7 +169,7 @@ mod tests {
         frame[14 + 2] = 0x00;
         frame[14 + 3] = 0xC8;
         let mut pkt = FakePacket::new(&frame);
-        assert_dropped(Ipv4Packet::try_from(&pkt.ctx()));
+        assert_dropped(Ipv4Packet::parse_from(&pkt.ctx()));
     }
 
     #[test]
@@ -184,6 +180,6 @@ mod tests {
         frame[14 + 2] = 0x00;
         frame[14 + 3] = 0x0A;
         let mut pkt = FakePacket::new(&frame);
-        assert_dropped(Ipv4Packet::try_from(&pkt.ctx()));
+        assert_dropped(Ipv4Packet::parse_from(&pkt.ctx()));
     }
 }

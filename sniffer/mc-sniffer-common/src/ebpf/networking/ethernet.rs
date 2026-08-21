@@ -1,7 +1,7 @@
-use crate::{extract, index};
+use crate::extract;
 use aya_ebpf::bindings::xdp_action;
-use aya_ebpf::programs::XdpContext;
 use network_types::eth::{EthHdr, EtherType};
+use crate::ebpf::traits::{EbpfAction, EbpfContext};
 
 /// Checks that `ctx` carries a well-formed Ethernet header, and that its
 /// Ethertype is IPv4 -- the only traffic this crate cares about.
@@ -12,11 +12,11 @@ use network_types::eth::{EthHdr, EtherType};
 /// well-formed but the Ethertype isn't IPv4 -- this isn't corrupted, just
 /// uninteresting traffic (ARP, IPv6, ...) that should be passed through
 /// untouched rather than dropped.
-pub fn check_header(ctx: &XdpContext) -> Result<(), u32> {
-    let eth_hdr: *const EthHdr = index!(ctx[0]);
+pub fn check_header<C: EbpfContext>(ctx: &C) -> Result<(), C::Action> {
+    let eth_hdr: *const EthHdr = ctx.index(0)?;
     match extract!(eth_hdr).ether_type() {
         Ok(EtherType::Ipv4) => Ok(()),
-        _ => Err(xdp_action::XDP_PASS),
+        _ => Err(C::Action::ok()),
     }
 }
 

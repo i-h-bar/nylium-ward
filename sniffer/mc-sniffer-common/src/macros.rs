@@ -15,19 +15,12 @@ macro_rules! try_slice_into {
 }
 
 #[macro_export]
-macro_rules! index {
-    ($ctx:ident[$i:expr]) => {
-        $crate::ebpf::utils::ptr_at(&$ctx, $i)?
-    };
-}
-
-#[macro_export]
 macro_rules! extract {
-    ($ptr:expr) => {{
-        let ptr = $ptr;
-        unsafe { ptr.as_ref() }.ok_or(::aya_ebpf::bindings::xdp_action::XDP_ABORTED)?
-    }};
-}
+      ($ptr:expr) => {{
+          let ptr = $ptr;
+          unsafe { ptr.as_ref() }.ok_or_else($crate::ebpf::traits::EbpfAction::aborted)?
+      }};
+  }
 
 #[cfg(test)]
 mod scratch_verify {

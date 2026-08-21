@@ -1,7 +1,7 @@
 use aya_ebpf::programs::XdpContext;
 use crate::networking::net::TcpFlags;
 
-struct TcpPacket {
+pub struct TcpPacket {
     source_port: u16,
     destination_port: u16,
     flags: TcpFlags

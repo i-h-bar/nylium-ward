@@ -1,5 +1,5 @@
 use aya_ebpf::bindings::xdp_action;
-use aya_ebpf::programs::XdpContext;
+use crate::ebpf::traits::{EbpfAction, EbpfContext};
 
 /// Returns a bounds-checked pointer to a `T` at `offset` bytes into the
 /// packet `ctx` wraps.
@@ -8,13 +8,14 @@ use aya_ebpf::programs::XdpContext;
 /// Returns [`xdp_action::XDP_ABORTED`] if `offset + size_of::<T>()` would
 /// read past the end of the packet (`ctx.data_end()`) — i.e. there aren't
 /// enough bytes remaining at `offset` to hold a `T`.
-pub fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, u32> {
-    let start = ctx.data();
-    let end = ctx.data_end();
+#[inline(always)]
+pub fn ptr_at<T, C: EbpfContext>(ctx: &C, offset: usize) -> Result<*const T, C::Action> {
+    let start = ctx.start();
+    let end = ctx.end();
     let len = size_of::<T>();
 
     if start + offset + len > end {
-        return Err(xdp_action::XDP_ABORTED);
+        return Err(C::Action::default_action());
     }
 
     Ok((start + offset) as *const T)
