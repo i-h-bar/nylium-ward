@@ -133,6 +133,20 @@ install_k3s() {
     log_info "kubeconfig written to $target_home/.kube/config"
   fi
 
+  # `kubectl` on this host may just be a symlink to the k3s binary (see
+  # below) — its embedded kubectl ignores ~/.kube/config by default and
+  # hardcodes /etc/rancher/k3s/k3s.yaml, which is root-only. Point it at the
+  # copy above instead: export it now so the `task cilium:up` call later in
+  # this script (same process) works, and persist it for future shells.
+  export KUBECONFIG="$target_home/.kube/config"
+  if [ "${DRY_RUN:-0}" = "1" ]; then
+    log_info "[dry-run] would write KUBECONFIG=$target_home/.kube/config to /etc/profile.d/k3s-kubeconfig.sh"
+  else
+    echo "export KUBECONFIG=$target_home/.kube/config" | sudo tee /etc/profile.d/k3s-kubeconfig.sh >/dev/null
+    sudo chmod 644 /etc/profile.d/k3s-kubeconfig.sh
+    log_info "KUBECONFIG persisted to /etc/profile.d/k3s-kubeconfig.sh (new shells) and exported for this run"
+  fi
+
   if ! has_cmd kubectl; then
     if [ "${DRY_RUN:-0}" = "1" ]; then
       log_info "[dry-run] would run: sudo ln -sf /usr/local/bin/k3s /usr/local/bin/kubectl"

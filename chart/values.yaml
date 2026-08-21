@@ -21,19 +21,27 @@ image:
 # Find the slug in the modpack URL: curseforge.com/minecraft/modpacks/<slug>
 # Pin fileId so a pod restart can never silently upgrade the pack.
 modpack:
-  slug: "rlcraft"
-  fileId: "4612979"
+  slug: "dawn-craft"
+  fileId: "7243862"
   # CurseForge project slugs or numeric IDs to skip during mod install — for a
   # mod whose file is hosted off CurseForge and that host has since gone
   # defunct, this is the only way to unblock install without forking the pack.
   # Skipping a mod the server actually needs will break it; that's a call only
   # you can make per mod. Comma/space-delimited under the hood, so a plain
   # YAML list works.
-  excludeMods: []
+  excludeMods:
+    # Mixins server.properties on every boot to apply pack-default values —
+    # meant to run once (guarded by a marker file it never actually writes
+    # here), so it silently reverts RCON/MOTD/max-players/view-distance/
+    # command-block back to its own defaults ~30s after mc-image-helper
+    # writes ours from this chart, every single restart. Its own defaults
+    # (allow-nether=false, generate-structures=false, etc.) are already
+    # persisted in server.properties, so excluding it doesn't change them —
+    # it just stops it from re-clobbering everything else afterward.
+    - "default-server-properties"
   # Last-applied state for the installer's exclude/include re-evaluation —
   # toggled automatically by `task upgrade` (true during the deploy, false
-  # once applied). Not something to hand-edit in normal use, same as
-  # networkPolicy.phase below.
+  # once applied). Not something to hand-edit in normal use.
   forceSynchronize: false
 
 server:
@@ -47,6 +55,14 @@ server:
   tz: UTC
   enableCommandBlock: false   # itzg/vanilla default; some packs require true (check the pack's server README)
   extraEnv:             # Any additional itzg env var, e.g. {SPAWN_PROTECTION: "0"}
+    # mc-image-helper's bundled cf-exclude-include.json globally excludes
+    # particular-reforged as client-only, but for this pack it registers a
+    # Forge network channel without a server-absent allowance — so clients
+    # get "mismatched mod channel list" on connect unless the server also
+    # installs it. Other packs (beyond-depth, ftb-stoneblock-4, mc-eternal-2)
+    # have the same override upstream; deceasedcraft doesn't yet. Value is a
+    # comma/space-delimited list of project slugs or IDs, same as excludeMods.
+    CF_FORCE_INCLUDE_MODS: "particular-reforged,nether-skeletons"
     # Default connect/read timeout for Java's legacy URLConnection API, which
     # most mods' bespoke "phone home" update/contributor checkers use without
     # setting their own timeout — otherwise they inherit the JVM/OS default,
@@ -109,15 +125,8 @@ playit:
 # has Cilium as its CNI (see scripts/setup.sh / cilium/values.yaml) — these
 # values only control what CiliumNetworkPolicy allows, not whether Cilium runs.
 networkPolicy:
-  # install: broad egress needed to fetch a modpack (CurseForge/Forge/Fabric/
-  #          Mojang piston-meta). steady: narrow egress for a running server
-  #          (Mojang session-auth only). `task up`/`upgrade`/`restart` apply
-  #          install, wait for Ready, then apply steady automatically — this
-  #          value is just the last-applied state, not something to hand-edit
-  #          in normal use.
-  phase: install
   # Modpack-specific egress additions (mods that phone home to their own
-  # servers), applied in both phases. e.g. ["updates.somemod.dev"]
+  # servers). e.g. ["updates.somemod.dev"]
   extraAllowedFQDNs: []
 
 # Created by `task secrets` from .env — NOT managed by this chart.
