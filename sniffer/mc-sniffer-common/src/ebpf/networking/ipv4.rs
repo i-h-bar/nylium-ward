@@ -1,8 +1,8 @@
+use crate::ebpf::traits::{EbpfAction, EbpfContext, TryParse};
 use crate::extract;
 use network_types::eth::EthHdr;
 use network_types::ip::{IpError, IpProto, Ipv4Hdr};
 use network_types::tcp::TcpHdr;
-use crate::ebpf::traits::{EbpfAction, EbpfContext, TryParse};
 
 pub struct Ipv4Packet(u32, u16, usize);
 
@@ -70,8 +70,8 @@ impl<C: EbpfContext> TryParse<C> for Ipv4Packet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aya_ebpf::programs::XdpContext;
     use crate::ebpf::test_support::FakePacket;
+    use aya_ebpf::programs::XdpContext;
 
     // Same Ethernet+IPv4+TCP bytes as net.rs's LOCALHOST_LOGIN_FRAME /
     // parser.rs's fixtures -- 10.0.1.4:54321 -> 10.43.255.65:25565,

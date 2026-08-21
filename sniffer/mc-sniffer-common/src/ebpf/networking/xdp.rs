@@ -1,12 +1,18 @@
-use aya_ebpf::bindings::xdp_action;
-use aya_ebpf::programs::XdpContext;
 use crate::ebpf::traits::{EbpfAction, EbpfContext};
 use crate::ebpf::utils::ptr_at;
+use aya_ebpf::bindings::xdp_action;
+use aya_ebpf::programs::XdpContext;
 
 impl EbpfAction for xdp_action::Type {
-    fn ok() -> Self { xdp_action::XDP_PASS }
-    fn drop() -> Self { xdp_action::XDP_DROP }
-    fn aborted() -> Self { xdp_action::XDP_ABORTED }
+    fn ok() -> Self {
+        xdp_action::XDP_PASS
+    }
+    fn drop() -> Self {
+        xdp_action::XDP_DROP
+    }
+    fn aborted() -> Self {
+        xdp_action::XDP_ABORTED
+    }
 
     fn default_action() -> Self {
         Self::aborted()
@@ -15,7 +21,7 @@ impl EbpfAction for xdp_action::Type {
 
 impl EbpfContext for XdpContext {
     type Action = xdp_action::Type;
-    
+
     #[allow(clippy::inline_always)] // Needed for eBPF verifier
     #[inline(always)]
     fn index<T>(&self, i: usize) -> Result<*const T, Self::Action> {

@@ -1,6 +1,6 @@
+use crate::ebpf::traits::{EbpfAction, EbpfContext};
 use crate::extract;
 use network_types::eth::{EthHdr, EtherType};
-use crate::ebpf::traits::{EbpfAction, EbpfContext};
 
 /// Checks that `ctx` carries a well-formed Ethernet header, and that its
 /// Ethertype is IPv4 -- the only traffic this crate cares about.
@@ -25,8 +25,8 @@ pub fn check_header<C: EbpfContext>(ctx: &C) -> Result<(), C::Action> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aya_ebpf::bindings::xdp_action;
     use crate::ebpf::test_support::FakePacket;
+    use aya_ebpf::bindings::xdp_action;
 
     // Same 14-byte Ethernet header shape used throughout this crate's other
     // fixtures (net.rs, parser.rs) -- destination/source MAC, then

@@ -40,6 +40,14 @@ impl From<&u8> for TcpFlags {
     }
 }
 
+impl TryFrom<*const u8> for TcpFlags {
+    type Error = ();
+
+    fn try_from(flag: *const u8) -> Result<Self, Self::Error> {
+        Ok(Self(*unsafe { flag.as_ref() }.ok_or(())?))
+    }
+}
+
 impl TcpFlags {
     #[must_use]
     pub const fn is_fin(&self) -> bool {

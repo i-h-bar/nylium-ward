@@ -1,17 +1,39 @@
-use crate::ebpf::traits::{EbpfContext, TryParse};
+use crate::ebpf::traits::{EbpfAction, EbpfContext, TryParse};
+use crate::extract;
 use crate::networking::net::TcpFlags;
+use network_types::eth::EthHdr;
+use network_types::ip::Ipv4Hdr;
+use network_types::tcp::TcpHdr;
 
 pub struct TcpPacket {
-    source_port: u16,
-    destination_port: u16,
-    flags: TcpFlags
+    pub source_port: u16,
+    pub destination_port: u16,
+    pub flags: TcpFlags,
 }
 
 impl<C: EbpfContext> TryParse<C> for TcpPacket {
     type Error = C::Action;
 
     fn try_parse(ctx: &C) -> Result<Self, Self::Error> {
-        todo!()
+        let offset = EthHdr::LEN + Ipv4Hdr::LEN;
+        let tcp_header = extract!(ctx.index::<TcpHdr>(offset)?);
+        let header_len = (tcp_header.doff() * 4) as usize;
+        if header_len < 20 || (ctx.end() - ctx.start() - offset) < header_len  {
+            return Err(C::Action::drop());
+        }
+
+        let source_port = u16::from_be_bytes(tcp_header.source);
+        let destination_port = u16::from_be_bytes(tcp_header.dest);
+        let flags: TcpFlags = ctx
+            .index::<u8>(offset + 13)?
+            .try_into()
+            .map_err(|_| C::Action::default_action())?;
+
+        Ok(Self {
+            source_port,
+            destination_port,
+            flags,
+        })
     }
 }
 
@@ -70,8 +92,7 @@ mod tests {
     #[test]
     fn reads_ports_and_flags() {
         let mut pkt = FakePacket::new(&VALID_FRAME);
-        let tcp = TcpPacket::try_parse(&pkt.ctx())
-            .expect("should parse a valid TCP header");
+        let tcp = TcpPacket::try_parse(&pkt.ctx()).expect("should parse a valid TCP header");
         assert_eq!(tcp.source_port, 54321);
         assert_eq!(tcp.destination_port, 25565);
         // Flags byte 0x18 = 0b0001_1000 = PSH (0x08) + ACK (0x10).
@@ -88,8 +109,7 @@ mod tests {
         let mut frame = VALID_FRAME;
         frame[14 + 20 + 13] = 0x02; // TCP header's flags byte
         let mut pkt = FakePacket::new(&frame);
-        let tcp = TcpPacket::try_parse(&pkt.ctx())
-            .expect("should parse a valid TCP header");
+        let tcp = TcpPacket::try_parse(&pkt.ctx()).expect("should parse a valid TCP header");
         assert!(tcp.flags.is_syn());
         assert!(!tcp.flags.is_ack());
         assert!(!tcp.flags.is_fin());
@@ -127,5 +147,43 @@ mod tests {
         frame[14 + 20 + 12] = 0x00; // data offset 0, flags cleared
         let mut pkt = FakePacket::new(&frame);
         assert_rejected(TcpPacket::try_parse(&pkt.ctx()), xdp_action::XDP_DROP);
+    }
+
+    #[test]
+    fn tolerates_trailing_ethernet_padding() {
+        // Same frame, with 6 bytes of trailing zero padding appended, as if
+        // padded out to Ethernet's 64-byte minimum frame size -- matching
+        // ipv4.rs's own test of the same name. A well-formed, options-free
+        // (data offset 5) TCP header must still parse fine with extra
+        // trailing bytes present.
+        let mut frame = VALID_FRAME.to_vec();
+        frame.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+        let mut pkt = FakePacket::new(&frame);
+        assert!(TcpPacket::try_parse(&pkt.ctx()).is_ok());
+    }
+
+    #[test]
+    fn rejects_options_length_only_satisfied_by_trailing_padding() {
+        // EXPECTED TO FAIL until try_parse's header_len check is bounded
+        // against IPv4's declared Total Length instead of the physical
+        // `ctx.end()`. A data offset that claims 4 bytes of options must be
+        // rejected if those bytes are only "present" because of unrelated
+        // trailing Ethernet padding, not because the datagram actually
+        // carries options -- see the padding-tolerance discussion this test
+        // came out of.
+        let mut frame = VALID_FRAME[..14 + 20 + 20].to_vec(); // Eth+IPv4+bare 20-byte TCP header, no payload
+        frame[14 + 20 + 12] = 0x60; // data offset 6 -> claims a 24-byte header (4 bytes of options)
+
+        // No padding: only 20 physical bytes follow the TCP header start,
+        // less than the claimed 24 -- correctly rejected already.
+        let mut short = FakePacket::new(&frame);
+        assert_rejected(TcpPacket::try_parse(&short.ctx()), xdp_action::XDP_DROP);
+
+        // Append 6 bytes of trailing padding, with nothing behind it that's
+        // really part of this TCP header -- padding must never be able to
+        // satisfy a claimed options length, so this must still be rejected.
+        frame.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+        let mut padded = FakePacket::new(&frame);
+        assert_rejected(TcpPacket::try_parse(&padded.ctx()), xdp_action::XDP_DROP);
     }
 }

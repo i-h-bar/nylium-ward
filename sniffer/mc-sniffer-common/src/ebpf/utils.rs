@@ -1,5 +1,5 @@
-use aya_ebpf::bindings::xdp_action;
 use crate::ebpf::traits::{EbpfAction, EbpfContext};
+use aya_ebpf::bindings::xdp_action;
 
 /// Returns a bounds-checked pointer to a `T` at `offset` bytes into the
 /// packet `ctx` wraps.

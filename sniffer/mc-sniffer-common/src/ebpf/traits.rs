@@ -1,12 +1,9 @@
-
-
 pub trait EbpfAction {
     fn ok() -> Self;
     fn drop() -> Self;
     fn aborted() -> Self;
     fn default_action() -> Self;
 }
-
 
 pub trait EbpfContext {
     type Action: EbpfAction;

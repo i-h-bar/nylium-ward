@@ -16,11 +16,11 @@ macro_rules! try_slice_into {
 
 #[macro_export]
 macro_rules! extract {
-      ($ptr:expr) => {{
-          let ptr = $ptr;
-          unsafe { ptr.as_ref() }.ok_or_else($crate::ebpf::traits::EbpfAction::aborted)?
-      }};
-  }
+    ($ptr:expr) => {{
+        let ptr = $ptr;
+        unsafe { ptr.as_ref() }.ok_or_else($crate::ebpf::traits::EbpfAction::aborted)?
+    }};
+}
 
 #[cfg(test)]
 mod scratch_verify {
