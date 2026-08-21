@@ -45,14 +45,14 @@ fn try_mc_sniffer(ctx: XdpContext) -> Result<u32, ()> {
         }
     };
 
-    if ipv4.source_port != 25565 {
+    if ipv4.destination_port != 25565 {
         info!(&ctx, "Skipping none minecraft packet from {:i}:{}", ipv4.source_address, ipv4.source_port);
         return Ok(xdp_action::XDP_PASS);
     }
 
     let tcp = match TcpPacket::try_parse(&ctx) {
         Ok(tcp) => {
-            info!(&ctx, "Parsed TCP packet dest:- {} source:- {}", tcp.destination_port, tcp.source_port);
+            info!(&ctx, "Parsed TCP packet {} -> {}", tcp.destination_port, tcp.source_port);
             tcp
         },
         Err(action) => {

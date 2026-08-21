@@ -110,9 +110,9 @@ mod tests {
     fn succeeds_and_reads_addr_port_len() {
         let mut pkt = FakePacket::new(&VALID_FRAME);
         let ipv4 = Ipv4Packet::try_parse(&pkt.ctx()).expect("should parse a valid IPv4+TCP packet");
-        assert_eq!(ipv4.addr(), u32::from_be_bytes([10, 0, 1, 4]));
-        assert_eq!(ipv4.port(), 54321); // TCP source port
-        assert_eq!(ipv4.len(), 57); // IPv4 Total Length
+        assert_eq!(ipv4.source_address, u32::from_be_bytes([10, 0, 1, 4]));
+        assert_eq!(ipv4.source_port, 54321); // TCP source port
+        assert_eq!(ipv4.total_size, 57); // IPv4 Total Length
     }
 
     #[test]
