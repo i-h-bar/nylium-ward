@@ -15,17 +15,20 @@ impl EbpfAction for xdp_action::Type {
 
 impl EbpfContext for XdpContext {
     type Action = xdp_action::Type;
-
+    
+    #[allow(clippy::inline_always)] // Needed for eBPF verifier
     #[inline(always)]
     fn index<T>(&self, i: usize) -> Result<*const T, Self::Action> {
         ptr_at(self, i)
     }
 
+    #[allow(clippy::inline_always)] // Needed for eBPF verifier
     #[inline(always)]
     fn start(&self) -> usize {
         self.data()
     }
 
+    #[allow(clippy::inline_always)] // Needed for eBPF verifier
     #[inline(always)]
     fn end(&self) -> usize {
         self.data_end()

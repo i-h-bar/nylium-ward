@@ -2,7 +2,7 @@ use crate::extract;
 use network_types::eth::EthHdr;
 use network_types::ip::{IpError, IpProto, Ipv4Hdr};
 use network_types::tcp::TcpHdr;
-use crate::ebpf::traits::{EbpfAction, EbpfContext, ParseFrom};
+use crate::ebpf::traits::{EbpfAction, EbpfContext, TryParse};
 
 pub struct Ipv4Packet(u32, u16, usize);
 
@@ -28,10 +28,10 @@ impl Ipv4Packet {
     }
 }
 
-impl<C: EbpfContext> ParseFrom<C> for Ipv4Packet {
+impl<C: EbpfContext> TryParse<C> for Ipv4Packet {
     type Error = C::Action;
 
-    fn parse_from(ctx: &C) -> Result<Self, Self::Error> {
+    fn try_parse(ctx: &C) -> Result<Self, Self::Error> {
         let ipv4hdr: *const Ipv4Hdr = ctx.index(EthHdr::LEN)?;
         if extract!(ipv4hdr).version() != 4 {
             return Err(C::Action::drop());
@@ -51,6 +51,7 @@ impl<C: EbpfContext> ParseFrom<C> for Ipv4Packet {
         };
 
         let total_len = u16::from_be_bytes(extract!(ipv4hdr).tot_len) as usize;
+        #[allow(clippy::manual_range_contains)] // Needed for eBPF verifier
         if total_len < Ipv4Hdr::LEN || total_len > 1500 {
             return Err(C::Action::drop());
         }
@@ -121,7 +122,7 @@ mod tests {
     #[test]
     fn succeeds_and_reads_addr_port_len() {
         let mut pkt = FakePacket::new(&VALID_FRAME);
-        let ipv4 = Ipv4Packet::parse_from(&pkt.ctx()).expect("should parse a valid IPv4+TCP packet");
+        let ipv4 = Ipv4Packet::try_parse(&pkt.ctx()).expect("should parse a valid IPv4+TCP packet");
         assert_eq!(ipv4.addr(), u32::from_be_bytes([10, 0, 1, 4]));
         assert_eq!(ipv4.port(), 54321); // TCP source port
         assert_eq!(ipv4.len(), 57); // IPv4 Total Length
@@ -137,7 +138,7 @@ mod tests {
         let mut frame = VALID_FRAME.to_vec();
         frame.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
         let mut pkt = FakePacket::new(&frame);
-        assert!(Ipv4Packet::parse_from(&pkt.ctx()).is_ok());
+        assert!(Ipv4Packet::try_parse(&pkt.ctx()).is_ok());
     }
 
     #[test]
@@ -145,7 +146,7 @@ mod tests {
         let mut frame = VALID_FRAME;
         frame[14 + 9] = 17; // protocol field, offset 9 into the IP header; 17 = UDP
         let mut pkt = FakePacket::new(&frame);
-        assert_dropped(Ipv4Packet::parse_from(&pkt.ctx()));
+        assert_dropped(Ipv4Packet::try_parse(&pkt.ctx()));
     }
 
     #[test]
@@ -157,7 +158,7 @@ mod tests {
         let mut frame = VALID_FRAME;
         frame[14] = 0x65; // version 6 (IHL nibble left as 5, doesn't matter)
         let mut pkt = FakePacket::new(&frame);
-        assert_dropped(Ipv4Packet::parse_from(&pkt.ctx()));
+        assert_dropped(Ipv4Packet::try_parse(&pkt.ctx()));
     }
 
     #[test]
@@ -169,7 +170,7 @@ mod tests {
         frame[14 + 2] = 0x00;
         frame[14 + 3] = 0xC8;
         let mut pkt = FakePacket::new(&frame);
-        assert_dropped(Ipv4Packet::parse_from(&pkt.ctx()));
+        assert_dropped(Ipv4Packet::try_parse(&pkt.ctx()));
     }
 
     #[test]
@@ -180,6 +181,6 @@ mod tests {
         frame[14 + 2] = 0x00;
         frame[14 + 3] = 0x0A;
         let mut pkt = FakePacket::new(&frame);
-        assert_dropped(Ipv4Packet::parse_from(&pkt.ctx()));
+        assert_dropped(Ipv4Packet::try_parse(&pkt.ctx()));
     }
 }

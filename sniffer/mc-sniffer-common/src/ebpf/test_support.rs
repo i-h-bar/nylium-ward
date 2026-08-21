@@ -1,9 +1,12 @@
 //! Test-only helper for building a *real*, unmodified `XdpContext` in a
 //! host unit test — not a mock, not a reimplementation of the parsing logic
-//! against a `&[u8]`. The functions under test (`check_header`,
-//! `Ipv4Packet::try_from`, ...) call `ctx.data()`/`ctx.data_end()`, which
-//! read straight off an `xdp_md` struct's `data`/`data_end` fields and
-//! reinterpret them as a pointer (see `aya_ebpf::programs::XdpContext`).
+//! against a `&[u8]`.
+//!
+//! The functions under test (`check_header`, `Ipv4Packet::try_parse`, ...)
+//! are generic over [`EbpfContext`](crate::ebpf::traits::EbpfContext), whose
+//! `start()`/`end()` methods for `XdpContext` read straight off an `xdp_md`
+//! struct's `data`/`data_end` fields and reinterpret them as a pointer (see
+//! `aya_ebpf::programs::XdpContext`).
 //!
 //! The catch: those fields are `u32`, not `usize`. On a real 64-bit host, a
 //! normal stack/heap allocation's address is nearly always far above

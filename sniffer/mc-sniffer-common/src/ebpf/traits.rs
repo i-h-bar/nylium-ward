@@ -11,12 +11,25 @@ pub trait EbpfAction {
 pub trait EbpfContext {
     type Action: EbpfAction;
 
+    /// Returns a bounds-checked pointer to a `T` at `i` bytes into the
+    /// packet this context wraps.
+    ///
+    /// # Errors
+    /// Returns `Self::Action`'s default/aborted action if `i + size_of::<T>()`
+    /// would read past the end of the packet.
     fn index<T>(&self, i: usize) -> Result<*const T, Self::Action>;
     fn start(&self) -> usize;
     fn end(&self) -> usize;
 }
 
-pub trait ParseFrom<C: EbpfContext>: Sized {
+pub trait TryParse<C: EbpfContext>: Sized {
     type Error;
-    fn parse_from(ctx: &C) -> Result<Self, Self::Error>;
+
+    /// Parses `Self` out of the packet `ctx` wraps.
+    ///
+    /// # Errors
+    /// Returns `Self::Error` (`C::Action`) if the packet is too short for
+    /// the header being parsed, or fails whatever semantic validation this
+    /// type applies to it.
+    fn try_parse(ctx: &C) -> Result<Self, Self::Error>;
 }

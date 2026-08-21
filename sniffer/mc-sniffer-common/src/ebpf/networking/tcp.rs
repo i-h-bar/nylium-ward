@@ -1,4 +1,4 @@
-use aya_ebpf::programs::XdpContext;
+use crate::ebpf::traits::{EbpfContext, TryParse};
 use crate::networking::net::TcpFlags;
 
 pub struct TcpPacket {
@@ -7,10 +7,10 @@ pub struct TcpPacket {
     flags: TcpFlags
 }
 
-impl TryFrom<&XdpContext> for TcpPacket {
-    type Error = u32;
+impl<C: EbpfContext> TryParse<C> for TcpPacket {
+    type Error = C::Action;
 
-    fn try_from(ctx: &XdpContext) -> Result<Self, Self::Error> {
+    fn try_parse(ctx: &C) -> Result<Self, Self::Error> {
         todo!()
     }
 }
@@ -70,7 +70,7 @@ mod tests {
     #[test]
     fn reads_ports_and_flags() {
         let mut pkt = FakePacket::new(&VALID_FRAME);
-        let tcp = TcpPacket::try_from(&pkt.ctx())
+        let tcp = TcpPacket::try_parse(&pkt.ctx())
             .expect("should parse a valid TCP header");
         assert_eq!(tcp.source_port, 54321);
         assert_eq!(tcp.destination_port, 25565);
@@ -88,7 +88,7 @@ mod tests {
         let mut frame = VALID_FRAME;
         frame[14 + 20 + 13] = 0x02; // TCP header's flags byte
         let mut pkt = FakePacket::new(&frame);
-        let tcp = TcpPacket::try_from(&pkt.ctx())
+        let tcp = TcpPacket::try_parse(&pkt.ctx())
             .expect("should parse a valid TCP header");
         assert!(tcp.flags.is_syn());
         assert!(!tcp.flags.is_ack());
@@ -103,11 +103,11 @@ mod tests {
         // short of the fixed 20-byte TCP header even starting to fit.
         let mut pkt = FakePacket::new(&VALID_FRAME[..34 + 19]);
         // NOTE: adjust the expected action below to match whatever
-        // TcpPacket::try_from actually returns for a too-short buffer
+        // TcpPacket::try_parse actually returns for a too-short buffer
         // (XDP_ABORTED if it comes from a ptr_at/index! bounds failure,
         // matching ethernet.rs's too_short_is_aborted and
-        // Ipv4Packet::try_from's own use of ptr_at).
-        assert_rejected(TcpPacket::try_from(&pkt.ctx()), xdp_action::XDP_ABORTED);
+        // Ipv4Packet::try_parse's own use of ptr_at).
+        assert_rejected(TcpPacket::try_parse(&pkt.ctx()), xdp_action::XDP_ABORTED);
     }
 
     #[test]
@@ -117,15 +117,15 @@ mod tests {
         // segment can't have a data offset below 5) -- mirrors net.rs's
         // parse_tcp test of the same name.
         //
-        // NOTE: only meaningful once TcpPacket::try_from actually computes
+        // NOTE: only meaningful once TcpPacket::try_parse actually computes
         // and validates a data-offset-derived header length the way
         // net.rs::parse_tcp does; adjust the expected action to match your
-        // design (XDP_DROP, matching how Ipv4Packet::try_from treats its
+        // design (XDP_DROP, matching how Ipv4Packet::try_parse treats its
         // own semantic validation failures, is the closest existing
         // convention in this crate).
         let mut frame = VALID_FRAME;
         frame[14 + 20 + 12] = 0x00; // data offset 0, flags cleared
         let mut pkt = FakePacket::new(&frame);
-        assert_rejected(TcpPacket::try_from(&pkt.ctx()), xdp_action::XDP_DROP);
+        assert_rejected(TcpPacket::try_parse(&pkt.ctx()), xdp_action::XDP_DROP);
     }
 }

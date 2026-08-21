@@ -1,17 +1,19 @@
 use crate::extract;
-use aya_ebpf::bindings::xdp_action;
 use network_types::eth::{EthHdr, EtherType};
 use crate::ebpf::traits::{EbpfAction, EbpfContext};
 
 /// Checks that `ctx` carries a well-formed Ethernet header, and that its
 /// Ethertype is IPv4 -- the only traffic this crate cares about.
 ///
+/// Generic over any [`EbpfContext`] `C`, so the actions returned come from
+/// whichever context type `C` is.
+///
 /// # Errors
-/// Returns [`xdp_action::XDP_ABORTED`] if the Ethernet header itself doesn't
-/// fit in the packet. Returns [`xdp_action::XDP_PASS`] if the header is
-/// well-formed but the Ethertype isn't IPv4 -- this isn't corrupted, just
-/// uninteresting traffic (ARP, IPv6, ...) that should be passed through
-/// untouched rather than dropped.
+/// Returns `C::Action`'s default/aborted action if the Ethernet header
+/// itself doesn't fit in the packet. Returns `C::Action`'s "ok"/pass action
+/// if the header is well-formed but the Ethertype isn't IPv4 -- this isn't
+/// corrupted, just uninteresting traffic (ARP, IPv6, ...) that should be
+/// passed through untouched rather than dropped.
 pub fn check_header<C: EbpfContext>(ctx: &C) -> Result<(), C::Action> {
     let eth_hdr: *const EthHdr = ctx.index(0)?;
     match extract!(eth_hdr).ether_type() {
@@ -23,6 +25,7 @@ pub fn check_header<C: EbpfContext>(ctx: &C) -> Result<(), C::Action> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aya_ebpf::bindings::xdp_action;
     use crate::ebpf::test_support::FakePacket;
 
     // Same 14-byte Ethernet header shape used throughout this crate's other

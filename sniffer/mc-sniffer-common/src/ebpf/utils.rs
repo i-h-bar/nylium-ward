@@ -4,10 +4,15 @@ use crate::ebpf::traits::{EbpfAction, EbpfContext};
 /// Returns a bounds-checked pointer to a `T` at `offset` bytes into the
 /// packet `ctx` wraps.
 ///
+/// Generic over any [`EbpfContext`], so the actual bounds (`ctx.start()`/
+/// `ctx.end()`) and the action returned on failure come from whichever
+/// context type (`XdpContext`, ...) `C` is.
+///
 /// # Errors
-/// Returns [`xdp_action::XDP_ABORTED`] if `offset + size_of::<T>()` would
-/// read past the end of the packet (`ctx.data_end()`) — i.e. there aren't
-/// enough bytes remaining at `offset` to hold a `T`.
+/// Returns `C::Action`'s default/aborted action if `offset + size_of::<T>()`
+/// would read past the end of the packet — i.e. there aren't enough bytes
+/// remaining at `offset` to hold a `T`.
+#[allow(clippy::inline_always)] // Needed for eBPF verifier
 #[inline(always)]
 pub fn ptr_at<T, C: EbpfContext>(ctx: &C, offset: usize) -> Result<*const T, C::Action> {
     let start = ctx.start();
