@@ -4,66 +4,53 @@ use network_types::eth::EthHdr;
 use network_types::ip::{IpError, IpProto, Ipv4Hdr};
 use network_types::tcp::TcpHdr;
 
-pub struct Ipv4Packet(u32, u16, usize);
-
-impl Ipv4Packet {
-    #[must_use]
-    pub const fn addr(&self) -> u32 {
-        self.0
-    }
-
-    #[must_use]
-    pub const fn port(&self) -> u16 {
-        self.1
-    }
-
-    #[must_use]
-    pub const fn len(&self) -> usize {
-        self.2
-    }
-
-    #[must_use]
-    pub const fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
+pub struct Ipv4Packet {
+    pub source_address: u32,
+    pub source_port: u16,
+    pub destination_address: u32,
+    pub destination_port: u16,
+    pub total_size: usize,
 }
 
 impl<C: EbpfContext> TryParse<C> for Ipv4Packet {
     type Error = C::Action;
 
     fn try_parse(ctx: &C) -> Result<Self, Self::Error> {
-        let ipv4hdr: *const Ipv4Hdr = ctx.index(EthHdr::LEN)?;
-        if extract!(ipv4hdr).version() != 4 {
+        let ipv4hdr = extract!(ctx.index::<Ipv4Hdr>(EthHdr::LEN)?);
+        if ipv4hdr.version() != 4 {
             return Err(C::Action::drop());
         }
 
-        let source_addr = u32::from_be_bytes(extract!(ipv4hdr).src_addr);
-        let proto = extract!(ipv4hdr)
+        let source_address = ipv4hdr.src_addr().into();
+        let proto = ipv4hdr
             .proto()
             .map_err(|IpError::InvalidProto(_proto)| C::Action::drop())?;
 
-        let source_port = match proto {
+        let (source_port, destination_port) = match proto {
             IpProto::Tcp => {
-                let tcphdr: *const TcpHdr = ctx.index(EthHdr::LEN + Ipv4Hdr::LEN)?;
-                u16::from_be_bytes(extract!(tcphdr).source)
+                let tcphdr = extract!(ctx.index::<TcpHdr>(EthHdr::LEN + Ipv4Hdr::LEN)?);
+
+                (u16::from_be_bytes(tcphdr.source), u16::from_be_bytes(tcphdr.dest))
             }
             _ => return Err(C::Action::drop()), // Udp not allowed in this context
         };
 
-        let total_len = u16::from_be_bytes(extract!(ipv4hdr).tot_len) as usize;
+        let total_size = ipv4hdr.tot_len() as usize;
         #[allow(clippy::manual_range_contains)] // Needed for eBPF verifier
-        if total_len < Ipv4Hdr::LEN || total_len > 1500 {
+        if total_size < Ipv4Hdr::LEN || total_size > 1500 {
             return Err(C::Action::drop());
         }
 
         let start = ctx.start();
         let end = ctx.end();
 
-        if start + EthHdr::LEN + total_len > end {
+        if start + EthHdr::LEN + total_size > end {
             return Err(C::Action::drop());
         }
 
-        Ok(Self(source_addr, source_port, total_len))
+        let destination_address = ipv4hdr.dst_addr().into();
+
+        Ok(Self { source_address, source_port, total_size, destination_address, destination_port })
     }
 }
 

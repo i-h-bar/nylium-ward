@@ -17,6 +17,12 @@ pub trait EbpfContext {
     fn index<T>(&self, i: usize) -> Result<*const T, Self::Action>;
     fn start(&self) -> usize;
     fn end(&self) -> usize;
+    fn len(&self) -> usize {
+        self.end() - self.start()
+    }
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 pub trait TryParse<C: EbpfContext>: Sized {

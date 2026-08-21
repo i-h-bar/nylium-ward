@@ -15,10 +15,20 @@ impl<C: EbpfContext> TryParse<C> for TcpPacket {
     type Error = C::Action;
 
     fn try_parse(ctx: &C) -> Result<Self, Self::Error> {
+        let ipv4_header = extract!(ctx.index::<Ipv4Hdr>(EthHdr::LEN)?);
+        let total_len = ipv4_header.tot_len() as usize;
+        if total_len > 1500 {
+            return Err(C::Action::drop());
+        }
+
+        if total_len > ctx.len() - EthHdr::LEN {
+            return Err(C::Action::drop());
+        }
+
         let offset = EthHdr::LEN + Ipv4Hdr::LEN;
         let tcp_header = extract!(ctx.index::<TcpHdr>(offset)?);
         let header_len = (tcp_header.doff() * 4) as usize;
-        if header_len < 20 || (ctx.end() - ctx.start() - offset) < header_len  {
+        if header_len < 20 || (EthHdr::LEN + total_len - offset) < header_len  {
             return Err(C::Action::drop());
         }
 
@@ -127,7 +137,7 @@ mod tests {
         // (XDP_ABORTED if it comes from a ptr_at/index! bounds failure,
         // matching ethernet.rs's too_short_is_aborted and
         // Ipv4Packet::try_parse's own use of ptr_at).
-        assert_rejected(TcpPacket::try_parse(&pkt.ctx()), xdp_action::XDP_ABORTED);
+        assert_rejected(TcpPacket::try_parse(&pkt.ctx()), xdp_action::XDP_DROP);
     }
 
     #[test]
@@ -172,6 +182,11 @@ mod tests {
         // carries options -- see the padding-tolerance discussion this test
         // came out of.
         let mut frame = VALID_FRAME[..14 + 20 + 20].to_vec(); // Eth+IPv4+bare 20-byte TCP header, no payload
+        frame[16] = 0x00; // IPv4 Total Length -> 40 (20 IP + 20 TCP, no options, no payload):
+        frame[17] = 0x28; // corrects the stale value 57 inherited from VALID_FRAME, which
+                           // declared a full packet this truncated frame no longer is --
+                           // a real fix bounding against IPv4's declared length rather than
+                           // ctx.end() needs this to be accurate, or it can't be exercised.
         frame[14 + 20 + 12] = 0x60; // data offset 6 -> claims a 24-byte header (4 bytes of options)
 
         // No padding: only 20 physical bytes follow the TCP header start,
