@@ -10,6 +10,12 @@ vars:
   CILIUM_RELEASE: cilium
   CILIUM_VERSION: "1.20.0"
   CILIUM_VALUES: ./cilium/values.yaml
+  # Sniffer sidecar image (see sniffer/ and chart/values.yaml's sniffer:).
+  # SNIFFER_TAG picks which image tag to deploy: `main` is CI's build of the
+  # latest merge; for an unmerged branch, `task image:push` from sniffer/
+  # first, then e.g. `task up SNIFFER_TAG=tcp_sniffer`.
+  SNIFFER_REPO: i-h-bar/mc-sniffer
+  SNIFFER_TAG: '{{.SNIFFER_TAG | default "main"}}'
 
 tasks:
   default:
@@ -127,6 +133,8 @@ tasks:
         sh: RELEASE={{.RELEASE}} CHART={{.CHART}} DEPLOY={{.DEPLOY}} ./scripts/resolve-java-tag.sh
       JAVA_DIGEST:
         sh: ./scripts/resolve-image-digest.sh registry-1.docker.io itzg/minecraft-server {{.JAVA_TAG}}
+      SNIFFER_DIGEST:
+        sh: ./scripts/resolve-image-digest.sh ghcr.io {{.SNIFFER_REPO}} {{.SNIFFER_TAG}}
     cmds:
       # Best-effort refresh so a stale checkout doesn't ship an outdated
       # allowlist. Failure isn't fatal — falls back to what's committed.
@@ -134,6 +142,7 @@ tasks:
         ignore_error: true
       - echo "Deploying — this can take 10+ minutes on first boot while the modpack downloads. Check progress with 'task logs' in another terminal."
       - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}} --set image.digest={{.JAVA_DIGEST}}
+          --set sniffer.image.tag={{.SNIFFER_TAG}} --set sniffer.image.digest={{.SNIFFER_DIGEST}}
           --wait --timeout 20m
 
   down:
@@ -167,6 +176,11 @@ tasks:
     cmds:
       - kubectl logs -f {{.DEPLOY}}
 
+  sniffer:logs:
+    desc: Stream the XDP handshake filter's logs (per-packet verdicts at the default info level)
+    cmds:
+      - kubectl logs -f {{.DEPLOY}} -c sniffer
+
   console:
     desc: Open an RCON console on the server
     interactive: true
@@ -180,8 +194,11 @@ tasks:
         sh: RELEASE={{.RELEASE}} CHART={{.CHART}} DEPLOY={{.DEPLOY}} ./scripts/resolve-java-tag.sh
       JAVA_DIGEST:
         sh: ./scripts/resolve-image-digest.sh registry-1.docker.io itzg/minecraft-server {{.JAVA_TAG}}
+      SNIFFER_DIGEST:
+        sh: ./scripts/resolve-image-digest.sh ghcr.io {{.SNIFFER_REPO}} {{.SNIFFER_TAG}}
     cmds:
       - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}} --set image.digest={{.JAVA_DIGEST}}
+          --set sniffer.image.tag={{.SNIFFER_TAG}} --set sniffer.image.digest={{.SNIFFER_DIGEST}}
       - kubectl rollout restart {{.DEPLOY}}
       - kubectl rollout status {{.DEPLOY}} --timeout=20m
 
@@ -265,12 +282,16 @@ tasks:
         sh: RELEASE={{.RELEASE}} CHART={{.CHART}} DEPLOY={{.DEPLOY}} ./scripts/resolve-java-tag.sh
       JAVA_DIGEST:
         sh: ./scripts/resolve-image-digest.sh registry-1.docker.io itzg/minecraft-server {{.JAVA_TAG}}
+      SNIFFER_DIGEST:
+        sh: ./scripts/resolve-image-digest.sh ghcr.io {{.SNIFFER_REPO}} {{.SNIFFER_TAG}}
     cmds:
       - task: export
       - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}} --set image.digest={{.JAVA_DIGEST}}
+          --set sniffer.image.tag={{.SNIFFER_TAG}} --set sniffer.image.digest={{.SNIFFER_DIGEST}}
           --set modpack.forceSynchronize=true --wait --timeout 30m
       - kubectl rollout status {{.DEPLOY}} --timeout=30m
       - helm upgrade --install {{.RELEASE}} {{.CHART}} --set image.tag={{.JAVA_TAG}} --set image.digest={{.JAVA_DIGEST}}
+          --set sniffer.image.tag={{.SNIFFER_TAG}} --set sniffer.image.digest={{.SNIFFER_DIGEST}}
           --set modpack.forceSynchronize=false
       - |
         echo "Upgrade complete. If the world is broken, roll back with:"

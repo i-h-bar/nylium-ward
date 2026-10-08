@@ -39,9 +39,13 @@ if [ -z "$token" ]; then
   exit 1
 fi
 
+# Index types first; the single-manifest types after them only matter for an
+# image that was pushed without an index at all (e.g. a local `docker push`
+# of a single-platform build) -- a registry still returns the index whenever
+# the tag has one, so multi-arch pins are unaffected.
 digest="$(curl -sf -D - -o /dev/null \
   -H "Authorization: Bearer $token" \
-  -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.index.v1+json" \
+  -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json" \
   "https://${REGISTRY}/v2/${REPOSITORY}/manifests/${TAG}" \
   | grep -i '^docker-content-digest:' | tr -d '\r' | awk '{print $2}')" || {
   log "ERROR: failed to fetch manifest for ${REPOSITORY}:${TAG} from $REGISTRY"

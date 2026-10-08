@@ -121,6 +121,42 @@ playit:
       cpu: "200m"
       memory: 128Mi
 
+# XDP handshake filter (sniffer/), run as a sidecar in the minecraft pod and
+# attached to the pod's own eth0: drops any connection to 25565 whose first
+# data isn't a valid Minecraft handshake, before the JVM ever sees it.
+#
+# Fails open: if the sidecar isn't running, nothing is filtered. But a
+# crash-looping sidecar marks the whole pod NotReady, which takes the
+# Service endpoint (and so the server) offline -- set enabled: false to get
+# the server back while debugging it. Restarting the sidecar also forgets
+# every allowed connection, so it disconnects everyone online.
+sniffer:
+  enabled: true
+  image:
+    repository: ghcr.io/i-h-bar/mc-sniffer
+    # `main` is published by .github/workflows/sniffer-publish.yml on every
+    # merge; other tags come from `task image:push` in sniffer/ (tagged with
+    # the local branch name). Overridden by `task up`/`restart`/
+    # `upgrade` via SNIFFER_TAG (default "main"), which also resolve and pin
+    # its digest the same way as the server image. Left empty here, a raw
+    # `helm upgrade` renders repository:tag only.
+    tag: "main"
+    digest: ""
+    pullPolicy: IfNotPresent
+  # RUST_LOG for the loader, which also prints the XDP program's own log
+  # lines (every packet at info -- noisy, but what you want while verifying
+  # it works; "warn" once you trust it).
+  logLevel: info
+  # XDP itself runs in the kernel, outside this container's accounting; this
+  # only covers the userspace loader and its log forwarding.
+  resources:
+    requests:
+      cpu: "10m"
+      memory: 16Mi
+    limits:
+      cpu: "200m"
+      memory: 64Mi
+
 # Cilium network policy. The chart is installed against a cluster that already
 # has Cilium as its CNI (see scripts/setup.sh / cilium/values.yaml) — these
 # values only control what CiliumNetworkPolicy allows, not whether Cilium runs.

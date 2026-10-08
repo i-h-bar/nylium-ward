@@ -1,0 +1,81 @@
+# Lint and test every pull request touching the sniffer. Never publishes
+# anything -- that's sniffer-publish.yml, on merge to main.
+#
+# The integration tests matter most: they're the only thing that loads the
+# program into a real kernel, so they're what catches verifier rejections.
+name: sniffer checks
+
+on:
+  pull_request:
+    paths:
+      - "sniffer/**"
+      - ".github/workflows/sniffer-checks.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sniffer
+    steps:
+      - uses: actions/checkout@v4
+
+      # Clippy on the host crates still runs mc-sniffer's build.rs, which
+      # compiles the eBPF crate: needs nightly + rust-src and bpf-linker
+      # (prebuilt, same reasoning as the Dockerfile).
+      - name: Install toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup toolchain install nightly --profile minimal --component rust-src,clippy
+          curl -sSfL -o "$RUNNER_TEMP/bpf-linker.tar.zst" \
+            https://github.com/aya-rs/bpf-linker/releases/latest/download/bpf-linker-x86_64-unknown-linux-musl.tar.zst
+          sudo tar --zstd -xf "$RUNNER_TEMP/bpf-linker.tar.zst" -C /usr/local/bin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sniffer
+
+      - name: rustfmt
+        run: cargo fmt --all --check
+
+      - name: clippy (userspace + common)
+        run: cargo clippy --all-targets -- -D warnings
+
+      # Not a default workspace member and only ever built for the BPF
+      # target via build.rs, so the run above never lints it.
+      - name: clippy (eBPF program)
+        run: cargo +nightly clippy -p mc-sniffer-ebpf --target bpfel-unknown-none -Z build-std=core -- -D warnings
+
+  unit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sniffer
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup toolchain install nightly --profile minimal --component rust-src
+          curl -sSfL -o "$RUNNER_TEMP/bpf-linker.tar.zst" \
+            https://github.com/aya-rs/bpf-linker/releases/latest/download/bpf-linker-x86_64-unknown-linux-musl.tar.zst
+          sudo tar --zstd -xf "$RUNNER_TEMP/bpf-linker.tar.zst" -C /usr/local/bin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sniffer
+
+      - run: cargo test
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Docker integration tests
+        working-directory: sniffer/tests
+        run: uv run pytest
