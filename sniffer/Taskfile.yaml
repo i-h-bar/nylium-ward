@@ -6,6 +6,12 @@ version: '3'
 
 vars:
   IFACE: '{{.IFACE | default "eth0"}}'
+  IMAGE: ghcr.io/i-h-bar/mc-sniffer
+  # The current branch name (`/` -> `-`), for trying an unmerged branch in
+  # the cluster: `task image:push` here, then `task up SNIFFER_TAG=<branch>`
+  # from the repo root. CI only ever publishes `main` (on merge).
+  TAG:
+    sh: git rev-parse --abbrev-ref HEAD | tr '/' '-'
 
 tasks:
   default:
@@ -24,3 +30,15 @@ tasks:
     dir: tests
     cmds:
       - uv run pytest
+
+  image:build:
+    desc: 'Build the deployable image (Dockerfile''s runtime stage). Usage: task image:build [TAG=<current branch>]'
+    cmds:
+      - docker build --target runtime --platform linux/amd64 -t {{.IMAGE}}:{{.TAG}} .
+
+  image:push:
+    desc: 'Build and push the deployable image to GHCR. Needs `docker login ghcr.io` with a token that has write:packages. Usage: task image:push [TAG=<current branch>]'
+    deps: [image:build]
+    cmds:
+      - docker push {{.IMAGE}}:{{.TAG}}
+      - 'echo "Pushed {{.IMAGE}}:{{.TAG}} -- deploy from the repo root with: task up SNIFFER_TAG={{.TAG}}"'

@@ -107,6 +107,7 @@ mod tests {
     // `TcpPacket` doesn't derive `Debug`, so `.unwrap_err()` (which needs
     // the whole `Result`, Ok side included, to be `Debug` for its panic
     // message) isn't usable -- same reasoning as ipv4.rs's assert_dropped.
+    #[allow(clippy::needless_pass_by_value)] // consumed by the match; callers pass try_parse() straight in
     fn assert_rejected(result: Result<TcpPacket, u32>, expected: u32) {
         match result {
             Err(action) => assert_eq!(action, expected),
@@ -243,9 +244,9 @@ mod tests {
         let mut frame = VALID_FRAME[..14 + 20 + 20].to_vec(); // Eth+IPv4+bare 20-byte TCP header, no payload
         frame[16] = 0x00; // IPv4 Total Length -> 40 (20 IP + 20 TCP, no options, no payload):
         frame[17] = 0x28; // corrects the stale value 57 inherited from VALID_FRAME, which
-                           // declared a full packet this truncated frame no longer is --
-                           // a real fix bounding against IPv4's declared length rather than
-                           // ctx.end() needs this to be accurate, or it can't be exercised.
+        // declared a full packet this truncated frame no longer is --
+        // a real fix bounding against IPv4's declared length rather than
+        // ctx.end() needs this to be accurate, or it can't be exercised.
         frame[14 + 20 + 12] = 0x60; // data offset 6 -> claims a 24-byte header (4 bytes of options)
 
         // No padding: only 20 physical bytes follow the TCP header start,

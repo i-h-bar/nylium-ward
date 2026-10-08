@@ -48,7 +48,10 @@ def packet_log_count() -> int:
 
 @pytest.fixture(scope="session")
 def sniffer_stack():
-    run("docker", "compose", "up", "--build", "-d")
+    up = run("docker", "compose", "up", "--build", "-d", check=False)
+    if up.returncode != 0:
+        run("docker", "compose", "down", check=False)
+        pytest.fail(f"docker compose up failed ({up.returncode}):\n{up.stderr[-4000:]}")
     try:
         for _ in range(30):
             if "Waiting for Ctrl-C" in sniffer_logs():

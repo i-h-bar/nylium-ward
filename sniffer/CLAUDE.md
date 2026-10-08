@@ -15,12 +15,37 @@ cargo clippy --all-targets                   # workspace lints: clippy all+pedan
 
 task run IFACE=<iface>                       # sudo -E cargo run --release -- --iface <iface>; attaches XDP to a real interface
 task test:docker                             # Docker integration tests (cd tests && uv run pytest)
+task image:build / task image:push [TAG=..]  # deployable image -> ghcr.io/i-h-bar/mc-sniffer:<branch>; push needs `docker login ghcr.io`
 cd tests && uv run pytest -k <name>          # single integration test
 ```
 
 - Building `mc-sniffer` (a default workspace member, so plain `cargo test`/`cargo build` included) runs `mc-sniffer/build.rs`, which cargo-in-cargo builds `mc-sniffer-ebpf` via `aya_build`. That needs a nightly toolchain with `rust-src` and `bpf-linker` on `PATH`. `mc-sniffer-ebpf` is deliberately not a default member, so don't build it directly with the host target.
 - `.cargo/config.toml` intentionally sets no `runner`: a runner would apply to `cargo test` too, and the tests don't need root. Only `cargo run` needs root (CAP_BPF/CAP_NET_ADMIN).
 - The Docker harness (`Dockerfile`, `docker-compose.yml`) runs the real XDP program on the container's own veth on a private bridge network. `privileged: true` is only there so `bpf()` gets past seccomp. Never switch it to `network_mode: host`. Unit tests passing doesn't mean the verifier will accept the program, so after changing anything in the eBPF path, run `task test:docker`: a rejected program shows the verifier log in `docker compose logs sniffer` instead of `Waiting for Ctrl-C...`.
+
+## Image and deployment
+
+The `Dockerfile` has two final stages:
+- **`runtime`** is the default and the deployed image: distroless, containing only `mc-sniffer`.
+- **`test`** adds the echo server, and only `docker-compose.yml` uses it.
+
+CI lives at the repo root:
+- **`.github/workflows/sniffer-checks.yml`** runs on PRs: rustfmt, clippy `-D warnings` on the host crates, and clippy on the eBPF crate for `bpfel-unknown-none`, which the plain clippy run never covers. Then unit tests and Docker tests. The Docker tests are the only verifier check.
+- **`.github/workflows/sniffer-publish.yml`** runs on merges to main. It only builds and pushes `runtime`, tagged `main` and `sha-<sha>`. To try an unmerged branch in the cluster, use `task image:push`.
+
+Run the same lint locally before pushing:
+```sh
+cargo fmt --all --check
+cargo clippy --all-targets -- -D warnings
+cargo +nightly clippy -p mc-sniffer-ebpf --target bpfel-unknown-none -Z build-std=core -- -D warnings
+```
+
+In the cluster the image runs as the `sniffer` sidecar in the minecraft pod (`chart/templates/minecraft-deployment.yaml`, values under `sniffer:`). Its settings:
+- `--iface eth0`, which is the pod's own interface.
+- Root with only `BPF`, `NET_ADMIN` and `PERFMON` capabilities.
+- The pod's `RuntimeDefault` seccomp profile.
+
+The root Taskfile's `up`/`restart`/`upgrade` pin the image by digest for `SNIFFER_TAG` (default `main`), and `task sniffer:logs` streams its output. The loader handles SIGTERM, because as PID 1 an unhandled SIGTERM would be ignored.
 
 ## Architecture
 

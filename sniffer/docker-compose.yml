@@ -24,6 +24,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: test
     privileged: true
     environment:
       - RUST_LOG=info

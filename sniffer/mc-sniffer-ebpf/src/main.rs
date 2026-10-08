@@ -49,20 +49,23 @@ struct FlowKey {
 static ALLOWED_FLOWS: LruHashMap<FlowKey, u8> = LruHashMap::with_max_entries(1024, 0);
 
 #[xdp]
+#[allow(clippy::needless_pass_by_value)] // signature fixed by aya's #[xdp]
 pub fn mc_sniffer(ctx: XdpContext) -> u32 {
-    try_mc_sniffer(ctx).unwrap_or(xdp_action::XDP_ABORTED)
+    verdict(&ctx)
 }
 
-fn try_mc_sniffer(ctx: XdpContext) -> Result<u32, ()> {
-    info!(&ctx, "Packet received");
-    if let Err(action) = ethernet::check_header(&ctx) {
-        info!(&ctx, "Ethernet check. Action: {}", format_action(&action));
-        return Ok(action);
+/// Every path ends in an XDP action -- parse failures carry their own (see
+/// `TryParse`) -- so there's no separate error case to map to ABORTED.
+fn verdict(ctx: &XdpContext) -> u32 {
+    info!(ctx, "Packet received");
+    if let Err(action) = ethernet::check_header(ctx) {
+        info!(ctx, "Ethernet check. Action: {}", format_action(&action));
+        return action;
     }
-    let ipv4 = match Ipv4Packet::try_parse(&ctx) {
+    let ipv4 = match Ipv4Packet::try_parse(ctx) {
         Ok(ipv4) => {
             info!(
-                &ctx,
+                ctx,
                 "Parsed IPv4 packet {:i}:{} -> {:i}:{} - size={}",
                 ipv4.source_address,
                 ipv4.source_port,
@@ -73,24 +76,30 @@ fn try_mc_sniffer(ctx: XdpContext) -> Result<u32, ()> {
             ipv4
         }
         Err(action) => {
-            info!(&ctx, "Ipv4 check. Action: {}", format_action(&action));
-            return Ok(action);
+            info!(ctx, "Ipv4 check. Action: {}", format_action(&action));
+            return action;
         }
     };
 
     if ipv4.destination_port != MINECRAFT_PORT {
-        info!(&ctx, "Skipping none minecraft packet from {:i}:{}", ipv4.source_address, ipv4.source_port);
-        return Ok(xdp_action::XDP_PASS);
+        info!(
+            ctx,
+            "Skipping none minecraft packet from {:i}:{}", ipv4.source_address, ipv4.source_port
+        );
+        return xdp_action::XDP_PASS;
     }
 
-    let tcp = match TcpPacket::try_parse(&ctx) {
+    let tcp = match TcpPacket::try_parse(ctx) {
         Ok(tcp) => {
-            info!(&ctx, "Parsed TCP packet {} -> {}", tcp.source_port, tcp.destination_port);
+            info!(
+                ctx,
+                "Parsed TCP packet {} -> {}", tcp.source_port, tcp.destination_port
+            );
             tcp
-        },
+        }
         Err(action) => {
-            info!(&ctx, "TCP check. Action: {}", format_action(&action));
-            return Ok(action);
+            info!(ctx, "TCP check. Action: {}", format_action(&action));
+            return action;
         }
     };
 
@@ -104,7 +113,7 @@ fn try_mc_sniffer(ctx: XdpContext) -> Result<u32, ()> {
     // A SYN starts a new connection; if this 4-tuple is being reused, the
     // old connection's handshake must not carry over to it.
     if tcp.flags.is_syn() {
-        let _ = ALLOWED_FLOWS.remove(&flow);
+        let _ = ALLOWED_FLOWS.remove(flow);
     }
 
     let action = if tcp.payload_len == 0 {
@@ -112,29 +121,39 @@ fn try_mc_sniffer(ctx: XdpContext) -> Result<u32, ()> {
         // handshake complete before any Minecraft bytes can exist, and
         // payload-less segments carry nothing for the server to parse.
         xdp_action::XDP_PASS
-    } else if ALLOWED_FLOWS.get_ptr(&flow).is_some() {
+    } else if ALLOWED_FLOWS.get_ptr(flow).is_some() {
         xdp_action::XDP_PASS
-    } else if check_handshake(&ctx, tcp.payload_offset, tcp.payload_len).is_ok() {
-        if ALLOWED_FLOWS.insert(&flow, &0, 0).is_err() {
-            warn!(&ctx, "Failed to remember flow {:i}:{}", flow.source_address, flow.source_port);
+    } else if check_handshake(ctx, tcp.payload_offset, tcp.payload_len).is_ok() {
+        if ALLOWED_FLOWS.insert(flow, 0, 0).is_err() {
+            warn!(
+                ctx,
+                "Failed to remember flow {:i}:{}", flow.source_address, flow.source_port
+            );
         }
-        info!(&ctx, "Valid handshake from {:i}:{}", flow.source_address, flow.source_port);
+        info!(
+            ctx,
+            "Valid handshake from {:i}:{}", flow.source_address, flow.source_port
+        );
         xdp_action::XDP_PASS
     } else {
-        info!(&ctx, "Dropping non-handshake data from {:i}:{}", flow.source_address, flow.source_port);
+        info!(
+            ctx,
+            "Dropping non-handshake data from {:i}:{}", flow.source_address, flow.source_port
+        );
         xdp_action::XDP_DROP
     };
 
     // Forget the connection once either side tears it down -- after the
     // verdict, so data riding on the FIN segment itself is still judged.
     if tcp.flags.is_fin() || tcp.flags.is_rst() {
-        let _ = ALLOWED_FLOWS.remove(&flow);
+        let _ = ALLOWED_FLOWS.remove(flow);
     }
 
-    Ok(action)
+    action
 }
 
 #[cfg(not(test))]
+#[allow(clippy::missing_const_for_fn)] // a panic handler can't be const
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}

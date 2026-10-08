@@ -62,9 +62,15 @@ async fn main() -> anyhow::Result<()> {
         .attach(&iface, XdpMode::default())
         .context("failed to attach the XDP program with default mode - try changing XdpMode::default() to XdpMode::Skb")?;
 
-    let ctrl_c = signal::ctrl_c();
+    // SIGTERM too, not just Ctrl-C: it's what Kubernetes/Docker stop a
+    // container with, and as PID 1 an unhandled SIGTERM is simply ignored --
+    // every pod shutdown would hang until the grace period's SIGKILL.
+    let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
     println!("Waiting for Ctrl-C...");
-    ctrl_c.await?;
+    tokio::select! {
+        result = signal::ctrl_c() => result?,
+        _ = sigterm.recv() => {}
+    }
     println!("Exiting...");
 
     Ok(())

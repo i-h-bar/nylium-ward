@@ -1,7 +1,10 @@
-# Test-only image: builds and runs the real XDP program inside an isolated
-# container so it never touches the dev machine's actual network interfaces.
-# See docker-compose.yml for how this gets run (privileged, but on a private
-# bridge network — never --network host).
+# Two images from one build:
+#
+#   runtime (default, last stage) -- what gets deployed: just mc-sniffer.
+#       Built by CI (.github/workflows/sniffer.yml) and `task image:build`.
+#   test -- mc-sniffer plus a stub echo listener behind the same XDP hook,
+#       for the integration tests. Only ever run via docker-compose.yml
+#       (privileged, but on a private bridge network -- never --network host).
 
 FROM rust:1.96-bookworm AS builder
 
@@ -24,7 +27,7 @@ WORKDIR /build
 COPY . .
 RUN cargo build --release -p mc-sniffer
 
-FROM debian:bookworm-slim AS runtime
+FROM debian:bookworm-slim AS test
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates python3 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /build/target/release/mc-sniffer /usr/local/bin/mc-sniffer
@@ -32,4 +35,11 @@ COPY docker/echo_server.py /usr/local/bin/echo_server.py
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["--iface", "eth0"]
+
+# Distroless: glibc (same Debian 12 as the builder) and nothing else -- no
+# shell or package manager in a container that holds CAP_BPF/CAP_NET_ADMIN.
+FROM gcr.io/distroless/cc-debian12 AS runtime
+COPY --from=builder /build/target/release/mc-sniffer /usr/local/bin/mc-sniffer
+ENTRYPOINT ["/usr/local/bin/mc-sniffer"]
 CMD ["--iface", "eth0"]

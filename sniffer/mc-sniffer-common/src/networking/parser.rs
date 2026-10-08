@@ -178,7 +178,7 @@ mod tests {
         // terminating byte of 0x7F — the maximum possible value, i.e. the
         // case most likely to lose bits.
         let buf = [0x80, 0x80, 0x80, 0x80, 0x7F];
-        assert_eq!(read_varint(&buf), Ok((-268435456, 5)));
+        assert_eq!(read_varint(&buf), Ok((-268_435_456, 5)));
     }
 
     #[test]

@@ -41,14 +41,6 @@ impl From<&u8> for TcpFlags {
     }
 }
 
-impl TryFrom<*const u8> for TcpFlags {
-    type Error = ();
-
-    fn try_from(flag: *const u8) -> Result<Self, Self::Error> {
-        Ok(Self(*unsafe { flag.as_ref() }.ok_or(())?))
-    }
-}
-
 impl TcpFlags {
     /// Builds the flags from an already bounds-checked header's bitfield
     /// getters, so the eBPF path never needs a second packet pointer just

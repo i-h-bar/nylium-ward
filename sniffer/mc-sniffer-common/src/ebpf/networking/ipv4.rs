@@ -123,6 +123,7 @@ mod tests {
     // the whole `Result`, Ok side included, to be `Debug` for its panic
     // message) isn't usable here -- this sidesteps that without touching
     // the struct's derives.
+    #[allow(clippy::needless_pass_by_value)] // consumed by the match; callers pass try_parse() straight in
     fn assert_dropped(result: Result<Ipv4Packet, <XdpContext as EbpfContext>::Action>) {
         match result {
             Err(action) => assert_eq!(action, <XdpContext as EbpfContext>::Action::drop()),
