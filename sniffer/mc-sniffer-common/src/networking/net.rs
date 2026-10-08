@@ -1,4 +1,5 @@
 use crate::{checked_slice, try_slice_into};
+use network_types::tcp::TcpHdr;
 
 pub const ETHERTYPE_IPV4: u16 = 0x0800;
 
@@ -49,6 +50,30 @@ impl TryFrom<*const u8> for TcpFlags {
 }
 
 impl TcpFlags {
+    /// Builds the flags from an already bounds-checked header's bitfield
+    /// getters, so the eBPF path never needs a second packet pointer just
+    /// to read the flags byte (see `ebpf::networking::tcp`).
+    #[must_use]
+    pub fn from_header(header: &TcpHdr) -> Self {
+        let mut flags = 0;
+        if header.fin() != 0 {
+            flags |= FIN_BIT;
+        }
+        if header.syn() != 0 {
+            flags |= SYN_BIT;
+        }
+        if header.rst() != 0 {
+            flags |= RST_BIT;
+        }
+        if header.psh() != 0 {
+            flags |= PSH_BIT;
+        }
+        if header.ack() != 0 {
+            flags |= ACK_BIT;
+        }
+        Self(flags)
+    }
+
     #[must_use]
     pub const fn is_fin(&self) -> bool {
         (self.0 & FIN_BIT) != 0

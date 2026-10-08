@@ -84,6 +84,39 @@ impl FakePacket {
     }
 }
 
+/// Wraps `payload` in this crate's usual fixture headers.
+///
+/// Ethernet + IPv4 (IHL 5) + TCP (data offset 5, PSH+ACK),
+/// 10.0.1.4:54321 -> 10.43.255.65:25565, with IPv4 Total Length set to
+/// match, so `TcpPacket::try_parse` reports exactly `payload` as the data.
+#[allow(clippy::missing_panics_doc)]
+#[must_use]
+pub fn tcp_frame(payload: &[u8]) -> Vec<u8> {
+    let total_len = u16::try_from(20 + 20 + payload.len()).expect("test payload too large");
+    let [len_hi, len_lo] = total_len.to_be_bytes();
+    #[rustfmt::skip]
+    let mut frame = vec![
+        // Ethernet
+        0x02, 0x00, 0x00, 0x00, 0x00, 0x01,
+        0x02, 0x00, 0x00, 0x00, 0x00, 0x02,
+        0x08, 0x00,
+        // IPv4
+        0x45, 0x00, len_hi, len_lo,
+        0x12, 0x34, 0x40, 0x00,
+        0x40, 0x06, 0x00, 0x00,
+        0x0A, 0x00, 0x01, 0x04,
+        0x0A, 0x2B, 0xFF, 0x41,
+        // TCP
+        0xD4, 0x31, 0x63, 0xDD,
+        0x00, 0x00, 0x00, 0x01,
+        0x00, 0x00, 0x00, 0x01,
+        0x50, 0x18, 0x20, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+    ];
+    frame.extend_from_slice(payload);
+    frame
+}
+
 impl Drop for FakePacket {
     fn drop(&mut self) {
         unsafe {

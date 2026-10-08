@@ -1,3 +1,4 @@
+pub mod minecraft;
 pub mod networking;
 pub mod utils;
 

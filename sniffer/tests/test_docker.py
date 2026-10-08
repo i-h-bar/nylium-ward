@@ -14,15 +14,13 @@ signal that can, which is what the stub echo listener (docker/echo_server.py,
 backgrounded by docker/entrypoint.sh inside the sniffer container) is for.
 
 - assert_probe_observed / the "*_observed" tests: just "did the XDP hook see
-  this frame at all" (via the "Packet received" log line). Cheap, and
-  true today since mc-sniffer-ebpf is still the placeholder that passes and
-  logs everything unconditionally.
-- probe_and_capture_echo / the "*_delivered" / "*_is_dropped" tests: the
-  actually substantive ones. test_non_minecraft_traffic_is_dropped is the
-  real target -- it currently FAILS, because nothing is dropped yet.
-  Implementing real handshake validation in mc-sniffer-ebpf (parse the
-  payload the way parser.rs::parse_handshake does, XDP_DROP on failure) is
-  what turns it green.
+  this frame at all" (via the "Packet received" log line, which every
+  packet gets regardless of verdict).
+- probe_and_capture_echo / probe_conversation and the "*_delivered" /
+  "*_dropped" / "*_blocked" tests: the substantive ones. A connection whose
+  first data segment is a valid handshake is remembered (per 4-tuple) and
+  everything after it passes; anything else is dropped, for the life of
+  the connection.
 """
 
 import subprocess
@@ -111,6 +109,35 @@ def probe_and_capture_echo(payload: bytes, *, timeout: float = 3.0) -> bytes:
     return bytes.fromhex(result.stdout.strip())
 
 
+def probe_conversation(messages: list[bytes], *, timeout: float = 3.0) -> list[bytes]:
+    """Sends each of `messages` in turn over ONE connection to
+    sniffer:25565, waiting for the echo of each before sending the next.
+    Returns one reply per message (empty where nothing came back in time) --
+    for checking that the sniffer remembers a connection's verdict across
+    packets, not just the first one."""
+    probe_code = (
+        "import socket, sys\n"
+        f"msgs = {messages!r}\n"
+        "replies = []\n"
+        "try:\n"
+        "    s = socket.create_connection(('sniffer', 25565), timeout=2)\n"
+        f"    s.settimeout({timeout})\n"
+        "    for m in msgs:\n"
+        "        s.send(m)\n"
+        "        try:\n"
+        "            replies.append(s.recv(4096))\n"
+        "        except OSError:\n"
+        "            replies.append(b'')\n"
+        "    s.close()\n"
+        "except OSError:\n"
+        "    pass\n"
+        "replies += [b''] * (len(msgs) - len(replies))\n"
+        "sys.stdout.write(' '.join(r.hex() or '-' for r in replies))\n"
+    )
+    result = run("docker", "compose", "exec", "-T", "probe", "python3", "-c", probe_code)
+    return [b"" if h == "-" else bytes.fromhex(h) for h in result.stdout.split()]
+
+
 # Same three scenarios PACKET_EXAMPLES.md and parser.rs's own unit tests
 # use -- full wire bytes (length-prefix included), since nothing in the
 # eBPF program strips it yet.
@@ -147,12 +174,24 @@ def test_non_minecraft_traffic_is_dropped(sniffer_stack):
     25565 -- is exactly the "wrong packet ID, not actually Minecraft" case
     this whole sniffer exists to catch. Its bytes should never reach
     anything listening behind the hook.
-
-    This is the real target: it currently FAILS, because mc-sniffer-ebpf is
-    still the placeholder that passes everything through unconditionally.
-    Implement real handshake validation there (parse the payload the way
-    parser.rs::parse_handshake does, XDP_DROP on failure) to turn this
-    green.
     """
     echo = probe_and_capture_echo(EXAMPLE_3_NOT_MINECRAFT)
     assert echo == b"", f"garbage payload was NOT dropped -- got echoed back: {echo!r}"
+
+
+def test_data_after_valid_handshake_is_delivered(sniffer_stack):
+    """Once a connection opens with a valid handshake, the sniffer must
+    remember it: later packets on the same connection aren't handshakes
+    (they're Login/Play traffic) and must still get through."""
+    follow_up = b"anything at all, not a handshake"
+    replies = probe_conversation([EXAMPLE_1_LOCALHOST_LOGIN, follow_up])
+    assert replies == [EXAMPLE_1_LOCALHOST_LOGIN, follow_up]
+
+
+def test_connection_opened_with_garbage_stays_blocked(sniffer_stack):
+    """A connection whose first data wasn't a handshake must not be
+    rescued by sending a valid one afterwards. (TCP retransmits the dropped
+    garbage ahead of anything sent later, so the server would see garbage
+    first anyway -- this checks none of it gets through.)"""
+    replies = probe_conversation([EXAMPLE_3_NOT_MINECRAFT, EXAMPLE_1_LOCALHOST_LOGIN])
+    assert replies == [b"", b""], f"blocked connection leaked data: {replies!r}"

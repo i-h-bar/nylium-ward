@@ -10,7 +10,13 @@ pub struct Ipv4Packet {
     pub destination_address: u32,
     pub destination_port: u16,
     pub total_size: usize,
+    /// IPv4 header length in bytes, from IHL (20..=60) -- the TCP header
+    /// starts this many bytes after the Ethernet header.
+    pub header_size: usize,
 }
+
+/// "More Fragments" bit within [`Ipv4Hdr::frag_flags`]'s 3 bits.
+const MORE_FRAGMENTS: u8 = 0b001;
 
 impl<C: EbpfContext> TryParse<C> for Ipv4Packet {
     type Error = C::Action;
@@ -26,18 +32,25 @@ impl<C: EbpfContext> TryParse<C> for Ipv4Packet {
             .proto()
             .map_err(|IpError::InvalidProto(_proto)| C::Action::drop())?;
 
-        let (source_port, destination_port) = match proto {
-            IpProto::Tcp => {
-                let tcphdr = extract!(ctx.index::<TcpHdr>(EthHdr::LEN + Ipv4Hdr::LEN)?);
+        // Anything that isn't TCP (DNS replies over UDP, ICMP, ...) is not
+        // ours to judge -- the pod this runs in still needs it for its own
+        // outbound traffic, so pass it through untouched.
+        if !matches!(proto, IpProto::Tcp) {
+            return Err(C::Action::ok());
+        }
 
-                (u16::from_be_bytes(tcphdr.source), u16::from_be_bytes(tcphdr.dest))
-            }
-            _ => return Err(C::Action::drop()), // Udp not allowed in this context
-        };
-
+        let header_size = ipv4hdr.ihl() as usize;
         let total_size = ipv4hdr.tot_len() as usize;
         #[allow(clippy::manual_range_contains)] // Needed for eBPF verifier
-        if total_size < Ipv4Hdr::LEN || total_size > 1500 {
+        if header_size < Ipv4Hdr::LEN || total_size < header_size || total_size > 1500 {
+            return Err(C::Action::drop());
+        }
+
+        // A fragment either has no TCP header at all (offset != 0) or only
+        // part of the payload (MF set), so neither the port nor the
+        // handshake can be judged from it -- and passing it would let the
+        // kernel reassemble unvalidated bytes behind our back.
+        if ipv4hdr.frag_offset() != 0 || ipv4hdr.frag_flags() & MORE_FRAGMENTS != 0 {
             return Err(C::Action::drop());
         }
 
@@ -48,9 +61,20 @@ impl<C: EbpfContext> TryParse<C> for Ipv4Packet {
             return Err(C::Action::drop());
         }
 
+        let tcphdr = extract!(ctx.index::<TcpHdr>(EthHdr::LEN + header_size)?);
+        let source_port = u16::from_be_bytes(tcphdr.source);
+        let destination_port = u16::from_be_bytes(tcphdr.dest);
+
         let destination_address = ipv4hdr.dst_addr().into();
 
-        Ok(Self { source_address, source_port, total_size, destination_address, destination_port })
+        Ok(Self {
+            source_address,
+            source_port,
+            destination_address,
+            destination_port,
+            total_size,
+            header_size,
+        })
     }
 }
 
@@ -129,11 +153,70 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_tcp_protocol() {
+    fn passes_non_tcp_protocol() {
+        // UDP (e.g. the pod's own DNS replies) isn't malformed, just not
+        // ours to judge -- must come back as Err(XDP_PASS), not a drop.
         let mut frame = VALID_FRAME;
         frame[14 + 9] = 17; // protocol field, offset 9 into the IP header; 17 = UDP
         let mut pkt = FakePacket::new(&frame);
+        match Ipv4Packet::try_parse(&pkt.ctx()) {
+            Err(action) => assert_eq!(action, <XdpContext as EbpfContext>::Action::ok()),
+            Ok(_) => panic!("expected non-TCP traffic to be passed through, not parsed"),
+        }
+    }
+
+    #[test]
+    fn reads_ports_after_ip_options() {
+        // IHL 6 -> 24-byte IP header: 4 bytes of options (all NOP, 0x01)
+        // inserted before the TCP header. The ports must come from *after*
+        // the options, not from a hardcoded 20-byte offset.
+        let mut frame = VALID_FRAME[..34].to_vec();
+        frame[14] = 0x46; // version 4, IHL 6
+        frame[17] = 0x39 + 4; // Total Length grows by the 4 option bytes
+        frame.extend_from_slice(&[0x01, 0x01, 0x01, 0x01]);
+        frame.extend_from_slice(&VALID_FRAME[34..]);
+        let mut pkt = FakePacket::new(&frame);
+        let ipv4 = Ipv4Packet::try_parse(&pkt.ctx()).expect("should parse IPv4 with options");
+        assert_eq!(ipv4.header_size, 24);
+        assert_eq!(ipv4.source_port, 54321);
+        assert_eq!(ipv4.destination_port, 25565);
+    }
+
+    #[test]
+    fn rejects_ihl_below_minimum() {
+        // IHL 4 -> claims a 16-byte header, below IPv4's 20-byte floor.
+        let mut frame = VALID_FRAME;
+        frame[14] = 0x44;
+        let mut pkt = FakePacket::new(&frame);
         assert_dropped(Ipv4Packet::try_parse(&pkt.ctx()));
+    }
+
+    #[test]
+    fn rejects_first_fragment() {
+        // MF set, offset 0: has a TCP header, but only part of the payload.
+        let mut frame = VALID_FRAME;
+        frame[14 + 6] = 0x20;
+        let mut pkt = FakePacket::new(&frame);
+        assert_dropped(Ipv4Packet::try_parse(&pkt.ctx()));
+    }
+
+    #[test]
+    fn rejects_later_fragment() {
+        // Fragment offset 1 (8 bytes in), MF clear: the last fragment,
+        // which carries no TCP header at all.
+        let mut frame = VALID_FRAME;
+        frame[14 + 7] = 0x01;
+        let mut pkt = FakePacket::new(&frame);
+        assert_dropped(Ipv4Packet::try_parse(&pkt.ctx()));
+    }
+
+    #[test]
+    fn allows_dont_fragment_flag() {
+        // DF (0x40) is what Linux sets on basically all TCP -- not a fragment.
+        let mut frame = VALID_FRAME;
+        frame[14 + 6] = 0x40;
+        let mut pkt = FakePacket::new(&frame);
+        assert!(Ipv4Packet::try_parse(&pkt.ctx()).is_ok());
     }
 
     #[test]

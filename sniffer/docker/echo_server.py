@@ -12,9 +12,25 @@ signal that can: DROP means this process never sees those bytes at all.
 
 Runs inside the sniffer container (backgrounded by entrypoint.sh) so it
 sits behind the same XDP hook mc-sniffer is attached to.
+
+Keeps echoing for the life of the connection (so tests can check that data
+*after* a valid handshake still gets through), one thread per connection so
+a connection stalled behind a DROP can't hold up the next test.
 """
 
 import socket
+import threading
+
+
+def handle(conn: socket.socket) -> None:
+    try:
+        conn.settimeout(5)
+        while data := conn.recv(4096):
+            conn.sendall(data)
+    except OSError:
+        pass
+    finally:
+        conn.close()
 
 
 def main() -> None:
@@ -24,15 +40,7 @@ def main() -> None:
     server.listen(8)
     while True:
         conn, _ = server.accept()
-        try:
-            conn.settimeout(5)
-            data = conn.recv(4096)
-            if data:
-                conn.sendall(data)
-        except OSError:
-            pass
-        finally:
-            conn.close()
+        threading.Thread(target=handle, args=(conn,), daemon=True).start()
 
 
 if __name__ == "__main__":

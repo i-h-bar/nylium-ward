@@ -9,6 +9,12 @@ pub struct TcpPacket {
     pub source_port: u16,
     pub destination_port: u16,
     pub flags: TcpFlags,
+    /// Byte offset of the TCP payload from the start of the packet
+    /// (Ethernet + IPv4 header + TCP header, options included).
+    pub payload_offset: usize,
+    /// Payload length as declared by IPv4's Total Length -- *not* derived
+    /// from `ctx.end()`, so trailing Ethernet padding never counts as data.
+    pub payload_len: usize,
 }
 
 impl<C: EbpfContext> TryParse<C> for TcpPacket {
@@ -25,24 +31,33 @@ impl<C: EbpfContext> TryParse<C> for TcpPacket {
             return Err(C::Action::drop());
         }
 
-        let offset = EthHdr::LEN + Ipv4Hdr::LEN;
+        let ip_header_len = ipv4_header.ihl() as usize;
+        if ip_header_len < Ipv4Hdr::LEN || total_len < ip_header_len {
+            return Err(C::Action::drop());
+        }
+
+        let offset = EthHdr::LEN + ip_header_len;
         let tcp_header = extract!(ctx.index::<TcpHdr>(offset)?);
         let header_len = (tcp_header.doff() * 4) as usize;
-        if header_len < 20 || (EthHdr::LEN + total_len - offset) < header_len  {
+        let segment_len = total_len - ip_header_len;
+        if header_len < 20 || segment_len < header_len {
             return Err(C::Action::drop());
         }
 
         let source_port = u16::from_be_bytes(tcp_header.source);
         let destination_port = u16::from_be_bytes(tcp_header.dest);
-        let flags: TcpFlags = ctx
-            .index::<u8>(offset + 13)?
-            .try_into()
-            .map_err(|_| C::Action::default_action())?;
+        // From the already-checked header, not a second
+        // `ctx.index::<u8>(offset + 13)`: with `offset` variable (IHL), LLVM
+        // drops that second bounds check as implied by the first, and the
+        // verifier can't tie the fresh pointer back to the checked one.
+        let flags = TcpFlags::from_header(tcp_header);
 
         Ok(Self {
             source_port,
             destination_port,
             flags,
+            payload_offset: offset + header_len,
+            payload_len: segment_len - header_len,
         })
     }
 }
@@ -111,6 +126,50 @@ mod tests {
         assert!(!tcp.flags.is_fin());
         assert!(!tcp.flags.is_rst());
         assert!(tcp.flags.is_psh());
+    }
+
+    #[test]
+    fn reports_payload_offset_and_len() {
+        let mut pkt = FakePacket::new(&VALID_FRAME);
+        let tcp = TcpPacket::try_parse(&pkt.ctx()).expect("should parse a valid TCP header");
+        assert_eq!(tcp.payload_offset, 14 + 20 + 20);
+        assert_eq!(tcp.payload_len, 17);
+    }
+
+    #[test]
+    fn trailing_padding_is_not_payload() {
+        let mut frame = VALID_FRAME.to_vec();
+        frame.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+        let mut pkt = FakePacket::new(&frame);
+        let tcp = TcpPacket::try_parse(&pkt.ctx()).expect("should parse a valid TCP header");
+        assert_eq!(tcp.payload_len, 17);
+    }
+
+    #[test]
+    fn header_found_after_ip_options() {
+        // IHL 6: 4 NOP option bytes before the TCP header. Flags and
+        // payload bounds must shift by those 4 bytes.
+        let mut frame = VALID_FRAME[..34].to_vec();
+        frame[14] = 0x46;
+        frame[17] = 0x39 + 4;
+        frame.extend_from_slice(&[0x01, 0x01, 0x01, 0x01]);
+        frame.extend_from_slice(&VALID_FRAME[34..]);
+        let mut pkt = FakePacket::new(&frame);
+        let tcp = TcpPacket::try_parse(&pkt.ctx()).expect("should parse TCP after IP options");
+        assert_eq!(tcp.source_port, 54321);
+        assert!(tcp.flags.is_psh() && tcp.flags.is_ack());
+        assert_eq!(tcp.payload_offset, 14 + 24 + 20);
+        assert_eq!(tcp.payload_len, 17);
+    }
+
+    #[test]
+    fn bare_ack_has_empty_payload() {
+        let mut frame = VALID_FRAME[..54].to_vec();
+        frame[17] = 40; // Total Length: 20 IP + 20 TCP, no data
+        frame[14 + 20 + 13] = 0x10; // ACK only
+        let mut pkt = FakePacket::new(&frame);
+        let tcp = TcpPacket::try_parse(&pkt.ctx()).expect("should parse a bare ACK");
+        assert_eq!(tcp.payload_len, 0);
     }
 
     #[test]

@@ -17,7 +17,14 @@ use aya_ebpf::bindings::xdp_action;
 pub fn ptr_at<T, C: EbpfContext>(ctx: &C, offset: usize) -> Result<*const T, C::Action> {
     let start = ctx.start();
     let end = ctx.end();
-    let len = size_of::<T>();
+    // Hidden from LLVM on purpose. With a known `len` of 1 (any `u8`
+    // read), LLVM rewrites `start + offset + 1 > end` as
+    // `end > start + offset` -- equivalent, but the verifier only grants a
+    // readable range from a comparison against a pointer with a non-zero
+    // constant offset, so it rejects the load that follows. The verifier
+    // still sees this as the constant it is (it tracks spilled constants),
+    // so the `+ len` survives into the comparison and the range is granted.
+    let len = unsafe { core::ptr::read_volatile(&size_of::<T>()) };
 
     if start + offset + len > end {
         return Err(C::Action::default_action());
