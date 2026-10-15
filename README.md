@@ -26,6 +26,11 @@ surface. This repo assumes that and is built to contain it, not just to run the 
 - **Default-deny network policy on both pods.** `minecraft` and `playit` can each reach
   only an explicit allowlist of domains/IPs/ports — nothing else, in either direction. See
   [Network security](#network-security).
+- **Non-Minecraft traffic is turned away at the door.** Anything that connects to the
+  server but doesn't start by speaking Minecraft (port scanners, bots, web crawlers) is
+  dropped before it ever reaches the server. Real players and the multiplayer server list
+  aren't affected. If it ever gets in the way, it can be switched off with
+  `sniffer.enabled: false` in `chart/values.yaml`.
 - **Pods run locked down.** Non-root where the base image allows it, all Linux capabilities
   dropped except the handful a startup sequence actually needs, no privilege escalation, no
   Kubernetes API token mounted (neither pod needs one).

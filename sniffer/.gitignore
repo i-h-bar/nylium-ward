@@ -1,0 +1,8 @@
+# Rust
+/target/
+
+# Python (tests/)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/

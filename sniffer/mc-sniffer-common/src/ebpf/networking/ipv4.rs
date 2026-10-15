@@ -1,0 +1,257 @@
+use crate::ebpf::traits::{EbpfAction, EbpfContext, TryParse};
+use crate::extract;
+use network_types::eth::EthHdr;
+use network_types::ip::{IpError, IpProto, Ipv4Hdr};
+use network_types::tcp::TcpHdr;
+
+pub struct Ipv4Packet {
+    pub source_address: u32,
+    pub source_port: u16,
+    pub destination_address: u32,
+    pub destination_port: u16,
+    pub total_size: usize,
+    /// IPv4 header length in bytes, from IHL (20..=60) -- the TCP header
+    /// starts this many bytes after the Ethernet header.
+    pub header_size: usize,
+}
+
+/// "More Fragments" bit within [`Ipv4Hdr::frag_flags`]'s 3 bits.
+const MORE_FRAGMENTS: u8 = 0b001;
+
+impl<C: EbpfContext> TryParse<C> for Ipv4Packet {
+    type Error = C::Action;
+
+    fn try_parse(ctx: &C) -> Result<Self, Self::Error> {
+        let ipv4hdr = extract!(ctx.index::<Ipv4Hdr>(EthHdr::LEN)?);
+        if ipv4hdr.version() != 4 {
+            return Err(C::Action::drop());
+        }
+
+        let source_address = ipv4hdr.src_addr().into();
+        let proto = ipv4hdr
+            .proto()
+            .map_err(|IpError::InvalidProto(_proto)| C::Action::drop())?;
+
+        // Anything that isn't TCP (DNS replies over UDP, ICMP, ...) is not
+        // ours to judge -- the pod this runs in still needs it for its own
+        // outbound traffic, so pass it through untouched.
+        if !matches!(proto, IpProto::Tcp) {
+            return Err(C::Action::ok());
+        }
+
+        let header_size = ipv4hdr.ihl() as usize;
+        let total_size = ipv4hdr.tot_len() as usize;
+        #[allow(clippy::manual_range_contains)] // Needed for eBPF verifier
+        if header_size < Ipv4Hdr::LEN || total_size < header_size || total_size > 1500 {
+            return Err(C::Action::drop());
+        }
+
+        // A fragment either has no TCP header at all (offset != 0) or only
+        // part of the payload (MF set), so neither the port nor the
+        // handshake can be judged from it -- and passing it would let the
+        // kernel reassemble unvalidated bytes behind our back.
+        if ipv4hdr.frag_offset() != 0 || ipv4hdr.frag_flags() & MORE_FRAGMENTS != 0 {
+            return Err(C::Action::drop());
+        }
+
+        let start = ctx.start();
+        let end = ctx.end();
+
+        if start + EthHdr::LEN + total_size > end {
+            return Err(C::Action::drop());
+        }
+
+        let tcphdr = extract!(ctx.index::<TcpHdr>(EthHdr::LEN + header_size)?);
+        let source_port = u16::from_be_bytes(tcphdr.source);
+        let destination_port = u16::from_be_bytes(tcphdr.dest);
+
+        let destination_address = ipv4hdr.dst_addr().into();
+
+        Ok(Self {
+            source_address,
+            source_port,
+            destination_address,
+            destination_port,
+            total_size,
+            header_size,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ebpf::test_support::FakePacket;
+    use aya_ebpf::programs::XdpContext;
+
+    // Same Ethernet+IPv4+TCP bytes as net.rs's LOCALHOST_LOGIN_FRAME /
+    // parser.rs's fixtures -- 10.0.1.4:54321 -> 10.43.255.65:25565,
+    // PSH+ACK, IPv4 Total Length 57 (20 IP header + 20 TCP header + 17
+    // payload), carrying a full Minecraft handshake wire payload.
+    #[rustfmt::skip]
+    const VALID_FRAME: [u8; 71] = [
+        // Ethernet header (14 bytes)
+        0x02, 0x00, 0x00, 0x00, 0x00, 0x01, // destination MAC
+        0x02, 0x00, 0x00, 0x00, 0x00, 0x02, // source MAC
+        0x08, 0x00,                         // Ethertype: IPv4
+        // IPv4 header (20 bytes, IHL = 5, no options)
+        0x45, 0x00,             // version 4, IHL 5; DSCP/ECN unused
+        0x00, 0x39,             // Total Length = 57 (20 + 20 + 17)
+        0x12, 0x34,             // Identification (arbitrary)
+        0x00, 0x00,             // Flags/Fragment offset (none)
+        0x40, 0x06,             // TTL 64, Protocol 6 (TCP)
+        0x00, 0x00,             // Header checksum (not validated)
+        0x0A, 0x00, 0x01, 0x04, // source 10.0.1.4
+        0x0A, 0x2B, 0xFF, 0x41, // destination 10.43.255.65
+        // TCP header (20 bytes, data offset = 5, no options)
+        0xD4, 0x31,             // source port 54321
+        0x63, 0xDD,             // destination port 25565
+        0x00, 0x00, 0x00, 0x01, // sequence number (arbitrary)
+        0x00, 0x00, 0x00, 0x01, // ack number (arbitrary)
+        0x50, 0x18,             // data offset 5, flags PSH+ACK
+        0x20, 0x00,             // window size (arbitrary)
+        0x00, 0x00,             // checksum (not validated)
+        0x00, 0x00,             // urgent pointer (unused)
+        // TCP payload: full Minecraft handshake wire bytes (length-prefix
+        // included) -- same 17 bytes as PACKET_EXAMPLES.md's Example 1.
+        0x10, 0x00, 0x81, 0x06, 0x09,
+        b'l', b'o', b'c', b'a', b'l', b'h', b'o', b's', b't',
+        0x63, 0xDD, 0x02,
+    ];
+
+    // `Ipv4Packet` doesn't derive `Debug`, so `.unwrap_err()` (which needs
+    // the whole `Result`, Ok side included, to be `Debug` for its panic
+    // message) isn't usable here -- this sidesteps that without touching
+    // the struct's derives.
+    #[allow(clippy::needless_pass_by_value)] // consumed by the match; callers pass try_parse() straight in
+    fn assert_dropped(result: Result<Ipv4Packet, <XdpContext as EbpfContext>::Action>) {
+        match result {
+            Err(action) => assert_eq!(action, <XdpContext as EbpfContext>::Action::drop()),
+            Ok(_) => panic!("expected the packet to be dropped, but it parsed successfully"),
+        }
+    }
+
+    #[test]
+    fn succeeds_and_reads_addr_port_len() {
+        let mut pkt = FakePacket::new(&VALID_FRAME);
+        let ipv4 = Ipv4Packet::try_parse(&pkt.ctx()).expect("should parse a valid IPv4+TCP packet");
+        assert_eq!(ipv4.source_address, u32::from_be_bytes([10, 0, 1, 4]));
+        assert_eq!(ipv4.source_port, 54321); // TCP source port
+        assert_eq!(ipv4.total_size, 57); // IPv4 Total Length
+    }
+
+    #[test]
+    fn tolerates_trailing_ethernet_padding() {
+        // Same frame, with 6 bytes of trailing zero padding appended, as if
+        // padded out to Ethernet's 64-byte minimum frame size. Total Length
+        // in the header is unchanged, so this must still parse successfully
+        // -- matching net.rs's parse_ipv4, which explicitly tolerates this
+        // (see its own trims_trailing_ethernet_padding test).
+        let mut frame = VALID_FRAME.to_vec();
+        frame.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+        let mut pkt = FakePacket::new(&frame);
+        assert!(Ipv4Packet::try_parse(&pkt.ctx()).is_ok());
+    }
+
+    #[test]
+    fn passes_non_tcp_protocol() {
+        // UDP (e.g. the pod's own DNS replies) isn't malformed, just not
+        // ours to judge -- must come back as Err(XDP_PASS), not a drop.
+        let mut frame = VALID_FRAME;
+        frame[14 + 9] = 17; // protocol field, offset 9 into the IP header; 17 = UDP
+        let mut pkt = FakePacket::new(&frame);
+        match Ipv4Packet::try_parse(&pkt.ctx()) {
+            Err(action) => assert_eq!(action, <XdpContext as EbpfContext>::Action::ok()),
+            Ok(_) => panic!("expected non-TCP traffic to be passed through, not parsed"),
+        }
+    }
+
+    #[test]
+    fn reads_ports_after_ip_options() {
+        // IHL 6 -> 24-byte IP header: 4 bytes of options (all NOP, 0x01)
+        // inserted before the TCP header. The ports must come from *after*
+        // the options, not from a hardcoded 20-byte offset.
+        let mut frame = VALID_FRAME[..34].to_vec();
+        frame[14] = 0x46; // version 4, IHL 6
+        frame[17] = 0x39 + 4; // Total Length grows by the 4 option bytes
+        frame.extend_from_slice(&[0x01, 0x01, 0x01, 0x01]);
+        frame.extend_from_slice(&VALID_FRAME[34..]);
+        let mut pkt = FakePacket::new(&frame);
+        let ipv4 = Ipv4Packet::try_parse(&pkt.ctx()).expect("should parse IPv4 with options");
+        assert_eq!(ipv4.header_size, 24);
+        assert_eq!(ipv4.source_port, 54321);
+        assert_eq!(ipv4.destination_port, 25565);
+    }
+
+    #[test]
+    fn rejects_ihl_below_minimum() {
+        // IHL 4 -> claims a 16-byte header, below IPv4's 20-byte floor.
+        let mut frame = VALID_FRAME;
+        frame[14] = 0x44;
+        let mut pkt = FakePacket::new(&frame);
+        assert_dropped(Ipv4Packet::try_parse(&pkt.ctx()));
+    }
+
+    #[test]
+    fn rejects_first_fragment() {
+        // MF set, offset 0: has a TCP header, but only part of the payload.
+        let mut frame = VALID_FRAME;
+        frame[14 + 6] = 0x20;
+        let mut pkt = FakePacket::new(&frame);
+        assert_dropped(Ipv4Packet::try_parse(&pkt.ctx()));
+    }
+
+    #[test]
+    fn rejects_later_fragment() {
+        // Fragment offset 1 (8 bytes in), MF clear: the last fragment,
+        // which carries no TCP header at all.
+        let mut frame = VALID_FRAME;
+        frame[14 + 7] = 0x01;
+        let mut pkt = FakePacket::new(&frame);
+        assert_dropped(Ipv4Packet::try_parse(&pkt.ctx()));
+    }
+
+    #[test]
+    fn allows_dont_fragment_flag() {
+        // DF (0x40) is what Linux sets on basically all TCP -- not a fragment.
+        let mut frame = VALID_FRAME;
+        frame[14 + 6] = 0x40;
+        let mut pkt = FakePacket::new(&frame);
+        assert!(Ipv4Packet::try_parse(&pkt.ctx()).is_ok());
+    }
+
+    #[test]
+    fn rejects_non_v4_version() {
+        // KNOWN GAP vs net.rs::parse_ipv4: Ipv4Packet::parse_from doesn't
+        // check the version nibble at all right now, so this documents the
+        // intended behavior rather than something already implemented --
+        // it's expected to fail until a version check is added.
+        let mut frame = VALID_FRAME;
+        frame[14] = 0x65; // version 6 (IHL nibble left as 5, doesn't matter)
+        let mut pkt = FakePacket::new(&frame);
+        assert_dropped(Ipv4Packet::try_parse(&pkt.ctx()));
+    }
+
+    #[test]
+    fn rejects_total_length_greater_than_packet_len() {
+        // Total Length field (IP header offset 2-3): claim 200 bytes even
+        // though only 57 actually arrived. Must not read/slice past the
+        // real buffer.
+        let mut frame = VALID_FRAME;
+        frame[14 + 2] = 0x00;
+        frame[14 + 3] = 0xC8;
+        let mut pkt = FakePacket::new(&frame);
+        assert_dropped(Ipv4Packet::try_parse(&pkt.ctx()));
+    }
+
+    #[test]
+    fn rejects_total_length_smaller_than_ip_header() {
+        // Total Length field: claim only 10 bytes, smaller than the 20-byte
+        // IPv4 header it's attached to.
+        let mut frame = VALID_FRAME;
+        frame[14 + 2] = 0x00;
+        frame[14 + 3] = 0x0A;
+        let mut pkt = FakePacket::new(&frame);
+        assert_dropped(Ipv4Packet::try_parse(&pkt.ctx()));
+    }
+}

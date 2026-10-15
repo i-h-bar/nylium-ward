@@ -16,6 +16,9 @@ spec:
       labels:
         {{- include "mc.selectorLabels" . | nindent 8 }}
       annotations:
+        # `kubectl logs/exec deploy/minecraft` (task logs, task console)
+        # target this container, not the sniffer sidecar.
+        kubectl.kubernetes.io/default-container: minecraft
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         checksum/connectivity-config: {{ include (print $.Template.BasePath "/connectivity-configmap.yaml") . | sha256sum }}
         checksum/fml-config: {{ include (print $.Template.BasePath "/fml-configmap.yaml") . | sha256sum }}
@@ -89,6 +92,36 @@ spec:
             - name: fml-config
               mountPath: /config/fml.toml
               subPath: fml.toml
+        {{- if .Values.sniffer.enabled }}
+        # Shares this pod's network namespace, so eth0 here is the server's
+        # own interface: XDP sees exactly the traffic playit forwards to it
+        # (and the pod's outbound replies, which it passes through).
+        - name: sniffer
+          image: "{{ .Values.sniffer.image.repository }}:{{ .Values.sniffer.image.tag }}{{ if .Values.sniffer.image.digest }}@{{ .Values.sniffer.image.digest }}{{ end }}"
+          imagePullPolicy: {{ .Values.sniffer.image.pullPolicy }}
+          args: ["--iface", "eth0"]
+          env:
+            - name: RUST_LOG
+              value: {{ .Values.sniffer.logLevel | quote }}
+          # Root only so the added capabilities are actually effective
+          # (Kubernetes doesn't grant ambient caps to non-root users). BPF to
+          # load the program and create its maps, NET_ADMIN to attach it to
+          # eth0, PERFMON so the verifier treats it like a privileged loader
+          # rather than applying the stricter unprivileged rules.
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - BPF
+                - NET_ADMIN
+                - PERFMON
+          resources:
+            {{- toYaml .Values.sniffer.resources | nindent 12 }}
+        {{- end }}
       volumes:
         - name: data
           persistentVolumeClaim:
