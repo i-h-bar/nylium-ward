@@ -3,7 +3,7 @@
 #
 #   sniffer  -- runs mc-sniffer, XDP attached to *its own* eth0 (a veth,
 #               unrelated to any real host interface)
-#   probe    -- alpine + netcat/python3, for hand-crafting and sending raw
+#   probe    -- python:alpine + netcat, for hand-crafting and sending raw
 #               Minecraft-handshake-shaped bytes at the sniffer container
 #
 # `privileged: true` is what lets the sniffer container call bpf() at all
@@ -32,8 +32,10 @@ services:
       - mc-test
 
   probe:
-    image: alpine:3.20
-    command: sh -c "apk add --no-cache netcat-openbsd python3 >/dev/null && sleep infinity"
+    # python3 ships in the image so the tests can exec it the moment the
+    # container is up; installing it at startup raced the first tests.
+    image: python:3.12-alpine
+    command: sh -c "apk add --no-cache netcat-openbsd >/dev/null; sleep infinity"
     networks:
       - mc-test
 
