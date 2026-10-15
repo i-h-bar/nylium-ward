@@ -1,7 +1,8 @@
 # Two images from one build:
 #
 #   runtime (default, last stage) -- what gets deployed: just mc-sniffer.
-#       Built by CI (.github/workflows/sniffer.yml) and `task image:build`.
+#       Built by CI on merge to main (.github/workflows/sniffer-publish.yml)
+#       and locally by `task image:build`.
 #   test -- mc-sniffer plus a stub echo listener behind the same XDP hook,
 #       for the integration tests. Only ever run via docker-compose.yml
 #       (privileged, but on a private bridge network -- never --network host).

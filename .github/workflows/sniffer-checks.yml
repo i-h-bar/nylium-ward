@@ -21,7 +21,7 @@ jobs:
       run:
         working-directory: sniffer
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Clippy on the host crates still runs mc-sniffer's build.rs, which
       # compiles the eBPF crate: needs nightly + rust-src and bpf-linker
@@ -55,7 +55,7 @@ jobs:
       run:
         working-directory: sniffer
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install toolchain
         run: |
@@ -74,8 +74,8 @@ jobs:
   integration:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
       - name: Docker integration tests
         working-directory: sniffer/tests
         run: uv run pytest
