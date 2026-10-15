@@ -13,7 +13,7 @@ use aya_ebpf::{
     maps::LruHashMap,
     programs::XdpContext,
 };
-use aya_log_ebpf::{info, warn};
+use aya_log_ebpf::{debug, info, warn};
 use mc_sniffer_common::ebpf::minecraft::check_handshake;
 use mc_sniffer_common::ebpf::networking::ethernet;
 use mc_sniffer_common::ebpf::networking::ipv4::Ipv4Packet;
@@ -57,14 +57,14 @@ pub fn mc_sniffer(ctx: XdpContext) -> u32 {
 /// Every path ends in an XDP action -- parse failures carry their own (see
 /// `TryParse`) -- so there's no separate error case to map to ABORTED.
 fn verdict(ctx: &XdpContext) -> u32 {
-    info!(ctx, "Packet received");
+    debug!(ctx, "Packet received");
     if let Err(action) = ethernet::check_header(ctx) {
-        info!(ctx, "Ethernet check. Action: {}", format_action(&action));
+        debug!(ctx, "Ethernet check. Action: {}", format_action(&action));
         return action;
     }
     let ipv4 = match Ipv4Packet::try_parse(ctx) {
         Ok(ipv4) => {
-            info!(
+            debug!(
                 ctx,
                 "Parsed IPv4 packet {:i}:{} -> {:i}:{} - size={}",
                 ipv4.source_address,
@@ -76,13 +76,13 @@ fn verdict(ctx: &XdpContext) -> u32 {
             ipv4
         }
         Err(action) => {
-            info!(ctx, "Ipv4 check. Action: {}", format_action(&action));
+            debug!(ctx, "Ipv4 check. Action: {}", format_action(&action));
             return action;
         }
     };
 
     if ipv4.destination_port != MINECRAFT_PORT {
-        info!(
+        debug!(
             ctx,
             "Skipping none minecraft packet from {:i}:{}", ipv4.source_address, ipv4.source_port
         );
@@ -91,14 +91,14 @@ fn verdict(ctx: &XdpContext) -> u32 {
 
     let tcp = match TcpPacket::try_parse(ctx) {
         Ok(tcp) => {
-            info!(
+            debug!(
                 ctx,
                 "Parsed TCP packet {} -> {}", tcp.source_port, tcp.destination_port
             );
             tcp
         }
         Err(action) => {
-            info!(ctx, "TCP check. Action: {}", format_action(&action));
+            debug!(ctx, "TCP check. Action: {}", format_action(&action));
             return action;
         }
     };

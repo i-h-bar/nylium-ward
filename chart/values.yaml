@@ -21,8 +21,8 @@ image:
 # Find the slug in the modpack URL: curseforge.com/minecraft/modpacks/<slug>
 # Pin fileId so a pod restart can never silently upgrade the pack.
 modpack:
-  slug: "dawn-craft"
-  fileId: "7243862"
+  slug: "vanilla-lightweight-reborn"
+  fileId: "9098876"
   # CurseForge project slugs or numeric IDs to skip during mod install — for a
   # mod whose file is hosted off CurseForge and that host has since gone
   # defunct, this is the only way to unblock install without forking the pack.
@@ -144,8 +144,8 @@ sniffer:
     digest: ""
     pullPolicy: IfNotPresent
   # RUST_LOG for the loader, which also prints the XDP program's own log
-  # lines (every packet at info -- noisy, but what you want while verifying
-  # it works; "warn" once you trust it).
+  # lines: info shows handshakes and drops, debug adds a line for every
+  # packet (noisy -- only for chasing a parsing problem).
   logLevel: info
   # XDP itself runs in the kernel, outside this container's accounting; this
   # only covers the userspace loader and its log forwarding.
