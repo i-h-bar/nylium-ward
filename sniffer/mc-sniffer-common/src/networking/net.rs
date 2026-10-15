@@ -261,7 +261,7 @@ mod tests {
             buf[13] = 0x00;
             let frame = parse_ethernet(&buf).unwrap();
             assert_eq!(frame.ethertype, ETHERTYPE_IPV4);
-            assert!(frame.payload.is_empty());
+            assert_eq!(frame.payload, []);
         }
 
         #[test]
@@ -407,7 +407,7 @@ mod tests {
             assert!(!tcp.flags.is_fin());
             assert!(!tcp.flags.is_rst());
             assert!(!tcp.flags.is_psh());
-            assert!(tcp.payload.is_empty());
+            assert_eq!(tcp.payload, []);
         }
 
         #[test]

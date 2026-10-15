@@ -15,7 +15,7 @@
 #
 # Usage:
 #   docker compose up --build -d
-#   docker compose logs -f sniffer          # watch XDP hits (RUST_LOG=info)
+#   docker compose logs -f sniffer          # watch XDP hits (RUST_LOG=debug)
 #   docker compose exec probe sh            # then use nc/python3 to probe
 #   docker compose down
 
@@ -27,7 +27,7 @@ services:
       target: test
     privileged: true
     environment:
-      - RUST_LOG=info
+      - RUST_LOG=debug  # tests count the per-packet "Packet received" debug line
     networks:
       - mc-test
 

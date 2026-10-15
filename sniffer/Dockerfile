@@ -6,7 +6,7 @@
 #       for the integration tests. Only ever run via docker-compose.yml
 #       (privileged, but on a private bridge network -- never --network host).
 
-FROM rust:1.96-bookworm AS builder
+FROM rust:1.99-bookworm AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends zstd \
     && rm -rf /var/lib/apt/lists/*
